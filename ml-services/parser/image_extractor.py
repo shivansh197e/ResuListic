@@ -25,10 +25,7 @@ def img_extract(file_input):
         if opened_here:
             img.close()
         
-        return text
+        return text,[]
     except Exception as err:
         print(f"Error: {err}")
-        return None
-
-    
-
+        return None,[]

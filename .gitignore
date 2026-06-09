@@ -216,3 +216,10 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# test resume
+ml-services/data/test_resumes/
+
+# Ignore all resume document formats globally
+*.pdf
+*.docx
