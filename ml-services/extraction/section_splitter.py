@@ -25,7 +25,6 @@ def clean_noisy_text(text):
     return text
 
 def splitter(text):
-    # general headings of specific sections in resume
     headings = [
         "SUMMARY", "PROFESSIONAL SUMMARY", "OBJECTIVE", "CAREER OBJECTIVE", "PROFILE", "ABOUT ME",
         "EDUCATION", "ACADEMIC BACKGROUND", "EDUCATIONAL QUALIFICATION", "ACADEMICS", "SCHOLASTIC RECORD",
@@ -39,8 +38,7 @@ def splitter(text):
 
     heading_pattern = r'\n\s*(' + '|'.join(headings) + r')\s*\n'
     
-    # Apply noise cleaning to the raw text first
-    text = clean_noisy_text(text)
+    text = clean_noisy_text(text) #taking already cleaned text
     
     splits = re.split(heading_pattern,"\n"+ text +"\n", flags=re.IGNORECASE)#splitter for regex
     section= {}
@@ -93,37 +91,3 @@ def splitter(text):
     return section
 
 
-# --- Quick Test ---
-if __name__ == "__main__":
-    
-    test_folder = r"D:\ResuMate\ml-services\data\test_resumes"
-    
-    print(f"🚀 Starting Batch Test in: {test_folder}\n")
-    print("-" * 50)
-    
-    if not os.path.exists(test_folder):
-        print(f"❌ Error: Folder '{test_folder}' not found. Path check karo.")
-    else:
-        # Folder ke andar ki har file par loop chalega
-        for filename in os.listdir(test_folder):
-            file_path = os.path.join(test_folder, filename)
-            
-            # Sirf files ko process karega (folders ya hidden items ko ignore karega)
-            if os.path.isfile(file_path):
-                print(f"📄 Processing: {filename}...")
-                
-                # 1. Pipeline ke through pass karo (Tuple Unpacking for text & hidden links)
-                raw_text, hidden_links = extract_text(file_path)
-                
-                if raw_text:
-                    # 2. Dono inputs contact_info ko bhejo
-                    final_data = splitter(raw_text)
-                    
-                    # 3. Output ko clean JSON format mein print karo
-                    print(json.dumps(final_data, indent=4))
-                else:
-                    print("❌ FAILED: Could not extract text from this file.")
-                
-                print("-" * 50)
-                
-        print("\n✅ Batch Testing Complete!")
