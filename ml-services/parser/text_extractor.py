@@ -1,52 +1,107 @@
+import os
 import pdfplumber
 from pdf2image import convert_from_path
 from parser.image_extractor import img_extract
 from parser.pdf_extractor import pdf_extract
 from parser.docx_extractor import docx_extract
 
-POPPLER_PATH=r"C:\poppler-26.02.0\Library\bin"
+POPPLER_PATH = os.environ.get(
+    "POPPLER_PATH",
+    r"C:\poppler-26.02.0\Library\bin"
+)
+
+SUPPORTED_EXTENSIONS = ('.png', '.jpg', '.jpeg', '.pdf', '.docx')
+
 
 def extract_text(file_path):
-    
+    """
+    Master router: takes any supported resume file and extracts text + hidden links.
+    Supports: PDF (text-based & scanned), DOCX, PNG, JPG, JPEG.
+    Returns: (text: str, hidden_links: list[str])
+    On failure: (None, [])
+    """
+
+    if not os.path.isfile(file_path):
+        print(f"❌ File not found: {file_path}")
+        return None, []
+ 
+    if not file_path.lower().endswith(SUPPORTED_EXTENSIONS):
+        print(f"⚠️ Unsupported file type: {file_path}")
+        print(f"   Supported formats: {', '.join(SUPPORTED_EXTENSIONS)}")
+        return None, []
+
     try:
-        text=""
-        hidden_links=[]
-        if file_path.lower().endswith('.png') or file_path.lower().endswith('.jpg') or file_path.lower().endswith('.jpeg'):#image
-            extracted_text,link= img_extract(file_path)
-            if extracted_text:  # Yeh check karega ki kya value None, khali string "", ya False toh nahi hai?
+        text = ""
+        hidden_links = []
+ 
+        if file_path.lower().endswith(('.png', '.jpg', '.jpeg')):
+            extracted_text, link = img_extract(file_path)
+            if extracted_text:
                 text += extracted_text
-        elif file_path.lower().endswith('.docx'):#word document
-            extracted_text,link= docx_extract(file_path)
-            if extracted_text:  # Yeh check karega ki kya value None, khali string "", ya False toh nahi hai?
+            if link:  
+                hidden_links.extend(link)
+ 
+        elif file_path.lower().endswith('.docx'):
+            extracted_text, link = docx_extract(file_path)
+            if extracted_text:
                 text += extracted_text
             if link:
                 hidden_links.extend(link)
-        elif file_path.lower().endswith('.pdf'):#simple pdf
-            with pdfplumber.open(file_path) as pdf:
-                page=pdf.pages[0]
-                txt=page.extract_text()
-                if txt and len(txt.strip())>10:
-                    extracted_text,link=pdf_extract(file_path)
-                    if extracted_text:  # Yeh check karega ki kya value None, khali string "", ya False toh nahi hai?
-                        text += extracted_text
-                    if link:
-                        hidden_links.extend(link)
-                else:#scanned pdf
-                    try:
-                        pages = convert_from_path(file_path, poppler_path=POPPLER_PATH)#conversion of pdf to image, pages will be a list of image objects
-                    except Exception as e:
-                        print(f"Error converting PDF to image: {e}")
-                        return None,[]
-                    for page_number, page_image in enumerate(pages): #after conversion, we'll get a list of image object, we'll send them to image_extractor using for loop on list
-                        print(f"Running OCR on page {page_number+1}...")
+ 
+        elif file_path.lower().endswith('.pdf'):
+            text, hidden_links = _handle_pdf(file_path)
 
-                        page_text,link=img_extract(page_image)
+        return text, hidden_links
 
-                        if page_text:
-                            text+=page_text+"\n"
-        return text,hidden_links
-    
     except Exception as err:
-        print(f"Error:{err}")
-        return None,[]
+        print(f"Error in extract_text: {err}")
+        return None, []
 
+
+def _handle_pdf(file_path):
+    """
+    Handles PDF extraction with smart detection:
+    Checks if the PDF is text-based or scanned (image-based) and routes accordingly.
+    """
+    text = ""
+    hidden_links = []
+
+    with pdfplumber.open(file_path) as pdf: 
+        if not pdf.pages:
+            print(f"⚠️ PDF has no pages: {file_path}")
+            return "", []
+ 
+        first_page_text = pdf.pages[0].extract_text()#checking if there's any text
+
+        if first_page_text and len(first_page_text.strip()) > 10:
+            
+            for page in pdf.pages:
+                page_text = page.extract_text()
+                if page_text:
+                    text += page_text + "\n"
+
+                
+                if page.hyperlinks:
+                    for link in page.hyperlinks:
+                        if 'uri' in link:
+                            hidden_links.append(link['uri'])
+ 
+            hidden_links = list(dict.fromkeys(hidden_links))
+
+        else:
+            
+            try:
+                pages = convert_from_path(file_path, poppler_path=POPPLER_PATH)
+            except Exception as e:
+                print(f"Error converting PDF to image: {e}")
+                return "", []
+
+            for page_number, page_image in enumerate(pages):
+                print(f"Running OCR on page {page_number + 1}...")
+                page_text, link = img_extract(page_image)
+                if page_text:
+                    text += page_text + "\n"
+                if link:
+                    hidden_links.extend(link)
+
+    return text, hidden_links

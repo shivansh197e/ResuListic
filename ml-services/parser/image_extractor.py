@@ -1,31 +1,54 @@
 import pytesseract
 from PIL import Image, ImageEnhance
+import os
 
-pytesseract.pytesseract.tesseract_cmd=r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+pytesseract.pytesseract.tesseract_cmd = os.environ.get(
+    "TESSERACT_CMD",
+    r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+)
+
+
 def img_extract(file_input):
-    text=""
+    """
+    Extracts text from an image using OCR (Tesseract).
+    Accepts either a file path (str) or a PIL Image object.
+    Returns: (text: str, links: list) — links is always [] since OCR can't detect hyperlinks.
+    On failure: (None, [])
+    """
+    original_img = None  
+    text = ""
     try:
-        if isinstance(file_input,str):#if it is string, it is filepath
-            img= Image.open(file_input)
-            opened_here=True
+        if isinstance(file_input, str):
+            img = Image.open(file_input)
+            original_img = img  
         else:
-            img=file_input#if it is not string, pdf was changed to image and that image is sent here(i.e. an image object which is already opened is sent here)
-            opened_here=False
-        #greyscalling
-        img=img.convert('L')
-        #resizing
-        wd=3*img.width
-        ht=3*img.height
-        img=img.resize((wd,ht),Image.Resampling.LANCZOS)
-        #increasing contrast to remove blur
-        enhancer=ImageEnhance.Contrast(img)
-        img=enhancer.enhance(2.5)
-        
-        text+= pytesseract.image_to_string(img)
-        if opened_here:
-            img.close()
-        
-        return text,[]
+            img = file_input  
+
+        processed = img.convert('L')
+
+        MIN_WIDTH = 1500
+        if processed.width < MIN_WIDTH:
+            scale = min(2, MIN_WIDTH / processed.width)
+            new_w = int(processed.width * scale)
+            new_h = int(processed.height * scale)
+            processed = processed.resize((new_w, new_h), Image.Resampling.LANCZOS)
+
+        enhancer = ImageEnhance.Contrast(processed)
+        processed = enhancer.enhance(2.5)
+
+        text = pytesseract.image_to_string(processed)
+
+        processed.close()
+        if original_img is not None:
+            original_img.close()
+
+        return text, []
+
     except Exception as err:
-        print(f"Error: {err}")
-        return None,[]
+        print(f"OCR Error in img_extract: {err}")
+        if original_img is not None:
+            try:
+                original_img.close()
+            except Exception:
+                pass
+        return None, []

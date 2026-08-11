@@ -1,16 +1,38 @@
 from docx import Document
 from docx.opc.constants import RELATIONSHIP_TYPE as RT
+
+
 def docx_extract(file_path):
-    text=""
-    hyper_link=[]
+    """
+    Extracts text and hyperlinks from a DOCX file.
+    Also extracts text from tables (many resume templates use tables for layout).
+    Returns: (text: str, hyperlinks: list[str])
+    On failure: (None, [])
+    """
+    text = ""
+    hyper_link = set()  # Using set to auto-deduplicate
     try:
-        doc=Document(file_path)#in this library, we don't need to use with open because it will also autometically closes the file preventing memory leaks
+        doc = Document(file_path)
+ 
         for para in doc.paragraphs:
-            text+= para.text + "\n"
-            for rel in para.part.rels.values():
-                if rel.reltype==RT.HYPERLINK:
-                    hyper_link.append(rel.target_ref)
-        return text,hyper_link
+            text += para.text + "\n"
+ 
+        for table in doc.tables:
+            for row in table.rows:
+                row_text = []
+                for cell in row.cells:
+                    cell_text = cell.text.strip()
+                    if cell_text:
+                        row_text.append(cell_text)
+                if row_text:
+                    text += " | ".join(row_text) + "\n"
+ 
+        for rel in doc.part.rels.values():
+            if rel.reltype == RT.HYPERLINK:
+                hyper_link.add(rel.target_ref)
+
+        return text, list(hyper_link)
+
     except Exception as err:
-        print(f"Error: {err}")
-        return None,[]
+        print(f"Error in docx_extract: {err}")
+        return None, []

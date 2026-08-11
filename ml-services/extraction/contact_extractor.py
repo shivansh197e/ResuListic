@@ -6,19 +6,39 @@ import json
 
 
 def email_extract(text):
-    email_pattern=r"\b[a-zA-Z0-9]+(?:[._%+-][a-zA-Z0-9]+)*@[a-zA-Z0-9-]+\.[A-Za-z]{2,}\b"
-    emails=re.findall(email_pattern,text)
+    # Handles subdomains (e.g. @mail.company.co.in) and special chars in username (+, _, .)
+    email_pattern = r"\b[a-zA-Z0-9][a-zA-Z0-9._%+-]*@[a-zA-Z0-9.-]+\.[A-Za-z]{2,}\b"
+    emails = re.findall(email_pattern, text)
     return emails
 
 def phone_extract(text):
-    ph_no=[match.raw_string for match in ph.PhoneNumberMatcher(text,"IN")]
-    return ph_no
+    # Primary: phonenumbers library for Indian numbers
+    ph_no = [match.raw_string for match in ph.PhoneNumberMatcher(text, "IN")]
+    
+    # Fallback: Regex to catch international numbers (e.g. +1-800-...) missed by IN matcher
+    if not ph_no:
+        intl_pattern = r"\+?\d[\d\s\-\.\(\)]{7,14}\d"
+        ph_no = re.findall(intl_pattern, text)
+    
+    # Deduplicate while preserving order
+    seen = set()
+    unique = []
+    for p in ph_no:
+        if p not in seen:
+            seen.add(p)
+            unique.append(p)
+    return unique
 
 def extract_links(text):
     l_pattern = r"(?<![@\w.-])(?:https?:\/\/)?(?:www\.)?[a-zA-Z0-9-]+(?:\.[a-zA-Z]{2,})+(?:\/[^\s]*)?"
 
-    links=re.findall(l_pattern,text)
-    clean_links=[link for link in links if not link.lower().endswith(('.js','.c','.cpp','.py',))]
+    links = re.findall(l_pattern, text)
+    clean_links = []
+    for link in links:
+        # Strip trailing punctuation that might get caught in the regex match
+        link = link.rstrip('.,;:)]')
+        if not link.lower().endswith(('.js','.c','.cpp','.py')):
+            clean_links.append(link)
     return clean_links
 
 def clean_final_links(raw_links):
@@ -90,10 +110,12 @@ def contact_info(text,hidden_link=None):
     hidden_mail=[]
     text_mail= email_extract(text)
     for link in hidden_link:
+        # Case-insensitive check — "MAILTO:" would slip through otherwise
         if link.lower().startswith("mailto:"):
             # "mailto:shivansh@gmail.com?subject=Hi" -> "shivansh@gmail.com"
-            clean_mail = link[7:].split('?')[0] 
-            hidden_mail.append(clean_mail)
+            clean_mail = link[7:].split('?')[0].strip()
+            if clean_mail:  # Only add if non-empty
+                hidden_mail.append(clean_mail)
     mail=list(set(text_mail+hidden_mail))
 
 
