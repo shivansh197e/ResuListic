@@ -2,13 +2,9 @@ import os
 import pdfplumber
 from pdf2image import convert_from_path
 from parser.image_extractor import img_extract
-from parser.pdf_extractor import pdf_extract
 from parser.docx_extractor import docx_extract
 
-POPPLER_PATH = os.environ.get(
-    "POPPLER_PATH",
-    r"C:\poppler-26.02.0\Library\bin"
-)
+POPPLER_PATH = os.environ.get("POPPLER_PATH")  # None = use system PATH
 
 SUPPORTED_EXTENSIONS = ('.png', '.jpg', '.jpeg', '.pdf', '.docx')
 
@@ -27,29 +23,29 @@ def extract_text(file_path):
  
     if not file_path.lower().endswith(SUPPORTED_EXTENSIONS):
         print(f"⚠️ Unsupported file type: {file_path}")
-        print(f"   Supported formats: {', '.join(SUPPORTED_EXTENSIONS)}")
+        print(f"🤖 Supported formats: {', '.join(SUPPORTED_EXTENSIONS)}")
         return None, []
 
     try:
         text = ""
         hidden_links = []
  
-        if file_path.lower().endswith(('.png', '.jpg', '.jpeg')):
+        if file_path.lower().endswith(('.png', '.jpg', '.jpeg')): #file is image type, hence send it to image_extractor.py
             extracted_text, link = img_extract(file_path)
             if extracted_text:
                 text += extracted_text
             if link:  
                 hidden_links.extend(link)
  
-        elif file_path.lower().endswith('.docx'):
+        elif file_path.lower().endswith('.docx'): #file is word document, send it to docx_extractor.py
             extracted_text, link = docx_extract(file_path)
             if extracted_text:
                 text += extracted_text
             if link:
                 hidden_links.extend(link)
  
-        elif file_path.lower().endswith('.pdf'):
-            text, hidden_links = _handle_pdf(file_path)
+        elif file_path.lower().endswith('.pdf'): #file is pdf type, first of all check if it is image only pdf or is text pdf
+            text, hidden_links = _handle_pdf(file_path) # sent to _handle_pdf function for checking
 
         return text, hidden_links
 
@@ -68,10 +64,10 @@ def _handle_pdf(file_path):
 
     with pdfplumber.open(file_path) as pdf: 
         if not pdf.pages:
-            print(f"⚠️ PDF has no pages: {file_path}")
+            print(f"🚨 PDF has no pages: {file_path}")
             return "", []
  
-        first_page_text = pdf.pages[0].extract_text()#checking if there's any text
+        first_page_text = pdf.pages[0].extract_text()#check if there's any text in 1st page(i.e. in the page which is at idx 0)
 
         if first_page_text and len(first_page_text.strip()) > 10:
             
@@ -93,11 +89,11 @@ def _handle_pdf(file_path):
             try:
                 pages = convert_from_path(file_path, poppler_path=POPPLER_PATH)
             except Exception as e:
-                print(f"Error converting PDF to image: {e}")
+                print(f"Error ☠️ converting PDF to image: {e}")
                 return "", []
 
             for page_number, page_image in enumerate(pages):
-                print(f"Running OCR on page {page_number + 1}...")
+                print(f"Running 🤖 OCR on page {page_number + 1}...")
                 page_text, link = img_extract(page_image)
                 if page_text:
                     text += page_text + "\n"

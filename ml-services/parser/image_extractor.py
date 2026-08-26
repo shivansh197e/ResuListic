@@ -2,10 +2,9 @@ import pytesseract
 from PIL import Image, ImageEnhance
 import os
 
-pytesseract.pytesseract.tesseract_cmd = os.environ.get(
-    "TESSERACT_CMD",
-    r"C:\Program Files\Tesseract-OCR\tesseract.exe"
-)
+_tesseract_cmd = os.environ.get("TESSERACT_CMD")
+if _tesseract_cmd:
+    pytesseract.pytesseract.tesseract_cmd = _tesseract_cmd
 
 
 def img_extract(file_input):

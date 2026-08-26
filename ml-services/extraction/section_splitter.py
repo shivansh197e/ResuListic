@@ -1,8 +1,5 @@
 import re
-from parser.text_extractor import extract_text
-import os
 
-import json
 
 
 def clean_noisy_text(text):
@@ -77,11 +74,23 @@ def splitter(text):
         # 3. Remove Phone Numbers (e.g., +91-844..., 98765...)
         summary_text = re.sub(r'\+?\d[\d \-\(\)]{8,14}\d', '', summary_text)
         
-        # 4. Remove leftover visual separators: pipes (|), bullets (•), em-dashes (—/–), and empty lines
-        summary_text = re.sub(r'[•|\-–—]', '', summary_text)
+        # 4. Remove leftover link text labels (e.g., "LinkedIn", "GitHub" that remain after URL removal)
+        link_labels = ['linkedin', 'github', 'portfolio', 'hackerrank', 'leetcode', 
+                       'codeforces', 'codechef', 'kaggle', 'behance', 'dribbble', 
+                       'medium', 'hashnode', 'website', 'blog']
+        for label in link_labels:
+            summary_text = re.sub(r'\b' + label + r'\b', '', summary_text, flags=re.IGNORECASE)
+
+        # 5. Remove leftover visual separators: pipes (|), bullets (•), em-dashes (—/–), and empty lines
+        summary_text = re.sub(r'[•|\\-–—]', '', summary_text)
         summary_text = re.sub(r'\n\s*\n', '\n', summary_text)
         
-        # 5. Update the cleaned summary back, OR delete the key if it became empty
+        # 6. Remove garbage summary (OCR artifacts) if it lacks enough real words (e.g. less than 4 alphabetic words)
+        words = re.findall(r'[a-zA-Z]{2,}', summary_text)
+        if len(words) < 4:
+            summary_text = ""
+
+        # 7. Update the cleaned summary back, OR delete the key if it became empty
         cleaned = summary_text.strip()
         if cleaned:
             section["SUMMARY"] = cleaned

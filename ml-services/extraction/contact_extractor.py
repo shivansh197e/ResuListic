@@ -1,8 +1,6 @@
 import re
 import phonenumbers as ph
-from parser.text_extractor import extract_text
-import os
-import json
+
 
 
 def email_extract(text):
@@ -17,13 +15,7 @@ def phone_extract(text):
         intl_pattern = r"\+?\d[\d\s\-\.\(\)]{7,14}\d"
         ph_no = re.findall(intl_pattern, text)
     
-    seen = set()
-    unique = []
-    for p in ph_no:
-        if p not in seen:
-            seen.add(p)
-            unique.append(p)
-    return unique
+    return list(dict.fromkeys(ph_no))
 
 def extract_links(text):
     l_pattern = r"(?<![@\w.-])(?:https?:\/\/)?(?:www\.)?[a-zA-Z0-9-]+(?:\.[a-zA-Z]{2,})+(?:\/[^\s]*)?"

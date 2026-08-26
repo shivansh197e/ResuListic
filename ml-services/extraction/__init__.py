@@ -3,5 +3,6 @@
 
 from .contact_extractor import contact_info
 from .section_splitter import splitter
+from .skills_extractor import extract_skill
 
-__all__ = ["contact_info", "splitter"]
+__all__ = ["contact_info", "splitter", "extract_skill"]
