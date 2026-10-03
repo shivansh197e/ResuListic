@@ -1,3 +1,1 @@
-# This file makes the 'schema' folder a Python package.
-# Without this file, Python won't recognize 'schema' as a module
-# and you won't be able to do: from schema.question_schema import ...
+# schema package
