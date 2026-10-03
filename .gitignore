@@ -228,3 +228,6 @@ ml-services/data/test_resumes/
 .env
 .env.*
 !.env.example
+
+# Antigravity / AI Agent configurations
+.agents/
