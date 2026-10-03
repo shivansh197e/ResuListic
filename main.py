@@ -10,6 +10,8 @@ from dotenv import load_dotenv
 sys.path.append(os.path.join(os.path.dirname(__file__), 'ml-services'))
 
 from builder.resume_builder import build_resume_document
+from schema.question_schema import StartTestRequest, AnswerSubmission
+from skill_test.question_selector import generate_test_session
 
 # Load environment variables
 load_dotenv()
@@ -31,6 +33,8 @@ MONGO_URI = os.getenv("MONGODB_URI") or os.getenv("MONGO_URI")
 client = MongoClient(MONGO_URI)
 db = client.resulistic_db         # Creates/Accesses 'resulistic_db' database
 resumes_collection = db.resumes   # Creates/Accesses 'resumes' collection
+test_sessions_collection = db.test_sessions
+test_submissions_collection = db.test_submissions
 
 @app.get("/")
 def read_root():
@@ -83,3 +87,80 @@ async def parse_resume(user_id: str = Form(...), file: UploadFile = File(...)):
         # 5. Clean up the temporary file to save space
         if os.path.exists(temp_file_path):
             os.remove(temp_file_path)
+
+
+@app.get("/api/user-skills/{user_id}")
+async def get_user_skills(user_id: str):
+    """
+    Fetches the skills extracted from the user's resume so the frontend
+    can display them for test selection.
+    """
+    user_doc = resumes_collection.find_one({"_id": user_id})
+    if not user_doc:
+        raise HTTPException(status_code=404, detail="User resume not found.")
+    
+    # Extract skills safely
+    skills = user_doc.get("enrichment", {}).get("skills", {})
+    
+    return {
+        "high_confidence": skills.get("high", []),
+        "medium_confidence": skills.get("medium", [])
+    }
+
+@app.post("/api/start-test")
+async def start_test(request: StartTestRequest):
+    """
+    Generates a 10-question dynamic test session based on the selected skills.
+    If no skills are selected, it defaults to the user's top high-confidence skills.
+    """
+    # 1. Fetch user doc to ensure they exist and get fallback skills if needed
+    user_doc = resumes_collection.find_one({"_id": request.user_id})
+    if not user_doc:
+        raise HTTPException(status_code=404, detail="User resume not found. Cannot start test.")
+
+    skills_to_test = request.selected_skills
+    
+    # If the frontend sent null or an empty list, auto-pick up to 5 high-confidence skills
+    if not skills_to_test:
+        high_skills = user_doc.get("enrichment", {}).get("skills", {}).get("high", [])
+        if not high_skills:
+            raise HTTPException(status_code=400, detail="No high-confidence skills found to auto-pick. Please select skills manually.")
+        skills_to_test = high_skills[:5]
+
+    try:
+        # 2. Generate the test session using our Orchestrator
+        # Note: This calls Gemini (AI) and MongoDB (Circular Tracker)
+        session_data = generate_test_session(db, request.user_id, skills_to_test)
+        
+        # 3. Save the full session (including evaluation keys/answers) to the database securely
+        test_sessions_collection.insert_one(session_data)
+        
+        # 4. Return ONLY the frontend-safe payload (which has answers stripped out)
+        return session_data["frontend_payload"]
+        
+    except Exception as e:
+        print(f"[ERROR] generating test: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/submit-test")
+async def submit_test(submission: AnswerSubmission):
+    """
+    Receives the user's answers. In Phase 5, this will trigger the AI Evaluator.
+    For now, it saves the raw answers to the database.
+    """
+    # 1. Verify the session exists
+    session = test_sessions_collection.find_one({"frontend_payload.session_id": submission.session_id})
+    if not session:
+        raise HTTPException(status_code=404, detail="Test session not found.")
+        
+    # 2. Save the submission
+    submission_doc = submission.model_dump()
+    submission_doc["status"] = "pending_evaluation"
+    
+    test_submissions_collection.insert_one(submission_doc)
+    
+    return {
+        "status": "submitted",
+        "session_id": submission.session_id,
+        "message": "Test submitted successfully. Evaluation pending Phase 5."
+    }
