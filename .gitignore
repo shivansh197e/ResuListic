@@ -223,3 +223,8 @@ ml-services/data/test_resumes/
 # Ignore all resume document formats globally
 *.pdf
 *.docx
+# Environment / secret files
+*.env
+.env
+.env.*
+!.env.example

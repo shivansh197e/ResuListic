@@ -134,19 +134,19 @@ def build_resume_document(file_path: str, user_id: str) -> dict | None:
     Returns None if the file could not be parsed.
     """
     if not user_id or not user_id.strip():
-        print("❌ user_id is required. Cannot create a document without authentication.")
+        print("[ERROR] user_id is required. Cannot create a document without authentication.")
         return None
 
     # ── Step 1: Parse the raw file ──────────────────────────────────────────
     result = extract_text(file_path)
     if result is None or result[0] is None:
-        print(f"❌ Could not extract text from: {file_path}")
+        print(f"[ERROR] Could not extract text from: {file_path}")
         return None
 
     raw_text, hidden_links = result
 
     if not raw_text or not raw_text.strip():
-        print(f"❌ Empty text extracted from: {file_path}")
+        print(f"[ERROR] Empty text extracted from: {file_path}")
         return None
 
     # ── Step 2: Run extractors ──────────────────────────────────────────────
@@ -230,25 +230,25 @@ if __name__ == "__main__":
     test_folder = os.path.join(os.path.dirname(__file__), "..", "data", "test_resumes")
     test_user_id = "test_user_001"  # Dummy user ID for testing
 
-    print(f"🚀 Starting Pipeline Test in: {test_folder}\n")
+    print(f"Starting Pipeline Test in: {test_folder}\n")
     print("-" * 60)
 
     if not os.path.exists(test_folder):
-        print(f"❌ Error: Folder '{test_folder}' not found.")
+        print(f"[ERROR] Folder '{test_folder}' not found.")
     else:
         for filename in os.listdir(test_folder):
             file_path = os.path.join(test_folder, filename)
 
             if os.path.isfile(file_path):
-                print(f"📄 Processing: {filename}...")
+                print(f"Processing: {filename}...")
 
                 doc = build_resume_document(file_path, test_user_id)
 
                 if doc:
                     print(json.dumps(doc, indent=4, ensure_ascii=False))
                 else:
-                    print("❌ FAILED: Pipeline returned None.")
+                    print("[FAILED] Pipeline returned None.")
 
                 print("-" * 60)
 
-        print("\n✅ Batch Pipeline Test Complete!")
+        print("\nBatch Pipeline Test Complete!")

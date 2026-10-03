@@ -18,12 +18,12 @@ def extract_text(file_path):
     """
 
     if not os.path.isfile(file_path):
-        print(f"❌ File not found: {file_path}")
+        print(f"[ERROR] File not found: {file_path}")
         return None, []
  
     if not file_path.lower().endswith(SUPPORTED_EXTENSIONS):
-        print(f"⚠️ Unsupported file type: {file_path}")
-        print(f"🤖 Supported formats: {', '.join(SUPPORTED_EXTENSIONS)}")
+        print(f"[WARN] Unsupported file type: {file_path}")
+        print(f"Supported formats: {', '.join(SUPPORTED_EXTENSIONS)}")
         return None, []
 
     try:
@@ -64,7 +64,7 @@ def _handle_pdf(file_path):
 
     with pdfplumber.open(file_path) as pdf: 
         if not pdf.pages:
-            print(f"🚨 PDF has no pages: {file_path}")
+            print(f"[WARN] PDF has no pages: {file_path}")
             return "", []
  
         first_page_text = pdf.pages[0].extract_text()#check if there's any text in 1st page(i.e. in the page which is at idx 0)
@@ -89,11 +89,11 @@ def _handle_pdf(file_path):
             try:
                 pages = convert_from_path(file_path, poppler_path=POPPLER_PATH)
             except Exception as e:
-                print(f"Error ☠️ converting PDF to image: {e}")
+                print(f"[ERROR] converting PDF to image: {e}")
                 return "", []
 
             for page_number, page_image in enumerate(pages):
-                print(f"Running 🤖 OCR on page {page_number + 1}...")
+                print(f"Running OCR on page {page_number + 1}...")
                 page_text, link = img_extract(page_image)
                 if page_text:
                     text += page_text + "\n"
