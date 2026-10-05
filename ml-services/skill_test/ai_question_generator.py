@@ -8,7 +8,7 @@ from google import genai
 from google.genai import types
 
 client = genai.Client()
-MODEL_NAME = "gemini-2.5-flash"
+MODEL_NAME = "gemini-flash-latest"
 
 
 # ── LLM-only schemas (internal, never sent to frontend) ────────────────────
