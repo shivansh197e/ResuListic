@@ -6,15 +6,34 @@ from fastapi.middleware.cors import CORSMiddleware
 from pymongo import MongoClient
 from dotenv import load_dotenv
 
+# Load environment variables early so dependent modules have API keys
+load_dotenv()
+
 # Ensure the ml-services module is accessible
 sys.path.append(os.path.join(os.path.dirname(__file__), 'ml-services'))
 
-from builder.resume_builder import build_resume_document
-from schema.question_schema import StartTestRequest, AnswerSubmission
-from skill_test.question_selector import generate_test_session
+try:
+    from builder.resume_builder import build_resume_document
+except Exception:
+    build_resume_document = None
 
-# Load environment variables
-load_dotenv()
+from schema.question_schema import (
+    StartTestRequest,
+    AnswerSubmission,
+    EvaluateRequest,
+    EvaluateResponse,
+)
+
+try:
+    from skill_test.question_selector import generate_test_session
+except Exception:
+    generate_test_session = None
+
+from skill_test.code_evaluator import (
+    evaluate_code,
+    get_question_and_solution,
+    save_submission,
+)
 
 # Initialize FastAPI App
 app = FastAPI(title="ResuListic API", version="1.0", description="API for Resume Parsing and Skill Testing")
@@ -35,6 +54,7 @@ db = client.resulistic_db         # Creates/Accesses 'resulistic_db' database
 resumes_collection = db.resumes   # Creates/Accesses 'resumes' collection
 test_sessions_collection = db.test_sessions
 test_submissions_collection = db.test_submissions
+submissions_collection = db.submissions
 
 @app.get("/")
 def read_root():
@@ -164,3 +184,52 @@ async def submit_test(submission: AnswerSubmission):
         "session_id": submission.session_id,
         "message": "Test submitted successfully. Evaluation pending Phase 5."
     }
+
+
+@app.post("/api/evaluate", response_model=EvaluateResponse)
+async def evaluate_submission(request: EvaluateRequest):
+    """
+    Evaluates candidate's Python code against problem description and reference solution
+    using Groq LLM-as-a-Judge, saves submission to MongoDB, and returns the grade.
+    """
+    try:
+        problem_desc = request.problem_description
+        ref_sol = request.reference_solution
+
+        # Resolve from database if problem description or reference solution not supplied
+        if not problem_desc or not ref_sol:
+            q_doc, sol_doc = get_question_and_solution(db, request.question_id)
+            if not q_doc and not problem_desc:
+                raise HTTPException(status_code=404, detail="Question not found")
+            problem_desc = problem_desc or q_doc.get("description", "")
+            ref_sol = ref_sol or sol_doc.get("reference_solution", "")
+
+        # Execute evaluation (falls back to mock if requested, offline, or key missing)
+        eval_result = evaluate_code(
+            code=request.code,
+            problem_description=problem_desc or "No description provided.",
+            reference_solution=ref_sol or "No reference solution provided.",
+            mock=bool(request.mock),
+        )
+
+        # Save submission record to MongoDB submissions collection
+        submission_id = save_submission(
+            db=db,
+            user_id=request.user_id,
+            question_id=request.question_id,
+            submitted_code=request.code,
+            evaluation_result=eval_result,
+        )
+
+        return EvaluateResponse(
+            passed=eval_result["passed"],
+            score=eval_result["score"],
+            feedback=eval_result["feedback"],
+            time_complexity=eval_result["time_complexity"],
+            submission_id=submission_id,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=422, detail=f"Evaluation failed: {str(e)}")
+

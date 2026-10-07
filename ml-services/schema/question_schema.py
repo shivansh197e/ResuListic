@@ -62,3 +62,33 @@ class UserTestState(BaseModel):
     hard_pointer: int
     test_count: int = 1
     last_test_at: Optional[str] = None
+
+
+# ── Code Evaluator Schemas (Phase 3b) ──────────────────────────────────────
+
+class EvaluateRequest(BaseModel):
+    user_id: str
+    question_id: str
+    code: str
+    problem_description: Optional[str] = None
+    reference_solution: Optional[str] = None
+    mock: Optional[bool] = False
+
+
+class CodeEvaluationResult(BaseModel):
+    passed: bool
+    score: int = Field(ge=0, le=100)
+    feedback: str
+    time_complexity: str
+
+
+EvaluationResult = CodeEvaluationResult
+
+
+class EvaluateResponse(BaseModel):
+    passed: bool
+    score: int
+    feedback: str
+    time_complexity: str
+    submission_id: str
+

@@ -23,7 +23,6 @@ class MutatedQuestion(BaseModel):
     mutated_title: str = Field(description="Novel problem title matching new storyline")
     mutated_description: str = Field(description="Rewritten description preserving all logic and constraints")
     mutated_solution: str = Field(description="Adapted code solution with updated variable names")
-    variable_mapping: dict[str, str] = Field(default_factory=dict)
     explanation: str = Field(default="")
 
 
@@ -49,7 +48,7 @@ def mock_mutate(row: dict) -> MutatedQuestion:
     s = row.get("reference_solution") or row.get("solution") or "# Model solution\ndef solve(): pass"
     return MutatedQuestion(
         mutated_title=f"Mutated: {t}", mutated_description=f"Rewritten: {d}",
-        mutated_solution=s, variable_mapping={"data": "stream"},
+        mutated_solution=s,
         explanation=row.get("explanation") or "Two pointers approach",
     )
 
