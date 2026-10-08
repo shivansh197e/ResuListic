@@ -19,7 +19,7 @@ def mock_evaluate_code(code: str, problem_description: str = "", reference_solut
 
 def evaluate_code(
     code: str, problem_description: str, reference_solution: str,
-    client: Optional[object] = None, model: str = "llama-3.3-70b-versatile",
+    client: Optional[object] = None, model: str = "qwen/qwen3.8-27b",
     mock: bool = False, max_retries: int = 3,
 ) -> dict:
     """Evaluates candidate code using Groq LLM (or mock fallback) with structured JSON output."""

@@ -53,38 +53,54 @@ def mock_mutate(row: dict) -> MutatedQuestion:
     )
 
 
-def mutate_question(client: Optional[object], row: dict, model: str = "gemini-2.5-flash", max_retries: int = 5) -> MutatedQuestion:
-    """Mutates question narrative and solution variables with 429 exponential backoff."""
-    if client is None or not hasattr(client, "models"):
+def mutate_question(client: Optional[object], row: dict, model: str = "qwen/qwen3.8-27b", max_retries: int = 10) -> MutatedQuestion:
+    """Mutates question narrative and solution variables with 429 exponential backoff using Groq."""
+    if client is None:
         return mock_mutate(row)
+    
     prompt = (
-        f"Rewrite this coding problem narrative and solution variables to prevent plagiarism.\n"
+        f"You are an expert technical interviewer mutating coding questions to prevent plagiarism.\n"
         f"Keep algorithmic complexity, logic, constraints, and I/O identical.\n"
+        f"You MUST return the output as a valid JSON object with exactly these four keys:\n"
+        f"1. 'mutated_title' (string)\n"
+        f"2. 'mutated_description' (string)\n"
+        f"3. 'mutated_solution' (string)\n"
+        f"4. 'explanation' (string)\n\n"
         f"Title: {row.get('title') or ''}\nDescription: {row.get('description') or ''}\n"
         f"Solution: {row.get('reference_solution') or row.get('solution') or ''}"
     )
-    cfg = types.GenerateContentConfig(
-        response_mime_type="application/json", response_schema=MutatedQuestion,
-        temperature=0.3, system_instruction="You are an expert technical interviewer mutating coding questions."
-    )
-    delay = float(os.getenv("RETRY_BASE_DELAY", "2.0"))
-    for attempt in range(max_retries):
-        try:
-            resp = client.models.generate_content(model=model, contents=prompt, config=cfg)
-            if hasattr(resp, "parsed") and resp.parsed is not None:
-                return resp.parsed
-            raw = resp.text.strip()
-            if raw.startswith("```"):
-                raw = raw.strip("`").removeprefix("json").strip()
-            return MutatedQuestion.model_validate_json(raw)
-        except Exception as e:
-            code, status = getattr(e, "code", None), getattr(e, "status", None)
-            is_429 = (code == 429) or (status == "RESOURCE_EXHAUSTED") or ("429" in str(e))
-            if is_429 and attempt < max_retries - 1:
-                time.sleep(delay)
-                delay *= 2.0
-                continue
-            raise
+
+    fallback_models = [model, "qwen/qwen3.8-27b", "openai/gpt-oss-120b", "openai/gpt-oss-20b"]
+    
+    for current_model in fallback_models:
+        delay = float(os.getenv("RETRY_BASE_DELAY", "1.0"))
+        for attempt in range(max_retries):
+            try:
+                chat_completion = client.chat.completions.create(
+                    messages=[{"role": "user", "content": prompt}],
+                    model=current_model,
+                    temperature=0.3,
+                    response_format={"type": "json_object"}
+                )
+                raw = chat_completion.choices[0].message.content
+                return MutatedQuestion.model_validate_json(raw)
+            except Exception as e:
+                err_str = str(e).lower()
+                if "404" in err_str or "not found" in err_str:
+                    print(f"      [!] Model {current_model} not found. Falling back to next...")
+                    break
+                    
+                is_retryable = any(x in err_str for x in ["429", "rate limit", "503", "connection error", "timeout", "connecttimeout"])
+                if is_retryable and attempt < max_retries - 1:
+                    print(f"      [!] {current_model} Busy/Timeout. Retrying in {delay}s (Attempt {attempt+1}/{max_retries})...")
+                    time.sleep(delay)
+                    delay *= 2.0
+                    continue
+                    
+                print(f"      [X] Fatal Error on {current_model}: {e}. Trying next model...")
+                break
+                
+    raise RuntimeError(f"All fallback models failed for question: {row.get('title')}")
 
 
 def bulk_insert_documents(db, mod_docs: list[dict], hard_docs: list[dict], sol_docs: list[dict]) -> dict[str, int]:
@@ -103,11 +119,12 @@ def bulk_insert_documents(db, mod_docs: list[dict], hard_docs: list[dict], sol_d
 
 
 def run_pipeline(csv_path: str, chunk_size: int = 50, dry_run: bool = False, clear: bool = False,
-                 mock_llm: bool = False, model: str = "gemini-2.5-flash", db=None, client=None) -> dict:
-    """Orchestrates CSV streaming, Gemini mutation, and MongoDB bulk loading."""
+                 mock_llm: bool = False, model: str = "qwen/qwen3.8-27b", db=None, client=None, skip: int = 0) -> dict:
+    """Orchestrates CSV streaming, Groq mutation, and MongoDB bulk loading."""
     db = db if db is not None else (None if dry_run else get_db())
-    if client is None and not (dry_run or mock_llm) and genai is not None:
-        client = genai.Client()
+    if client is None and not (dry_run or mock_llm):
+        from groq import Groq
+        client = Groq()
     index_counters, cleared_skills = defaultdict(int), set()
     totals = {"read": 0, "moderate": 0, "hard": 0, "solutions": 0}
 
@@ -115,6 +132,9 @@ def run_pipeline(csv_path: str, chunk_size: int = 50, dry_run: bool = False, cle
         mod_batch, hard_batch, sol_batch = [], [], []
         for row in chunk:
             totals["read"] += 1
+            if totals["read"] <= skip:
+                continue
+            
             skill = (row.get("skill") or row.get("topic") or "General").strip() or "General"
             raw_diff = (row.get("difficulty") or row.get("level") or "moderate").strip().lower()
             diff = "hard" if raw_diff in ("hard", "difficult", "expert", "3") else "moderate"
@@ -130,6 +150,7 @@ def run_pipeline(csv_path: str, chunk_size: int = 50, dry_run: bool = False, cle
                 last = coll.find_one({"skill": skill}, sort=[("index", -1)])
                 index_counters[(skill, diff)] = (last["index"] + 1) if last and "index" in last else 0
 
+            print(f"[{totals['read']}] Mutating: {row.get('title', 'Unknown Title')} ...")
             mut = mock_mutate(row) if (mock_llm or client is None) else mutate_question(client, row, model=model)
             idx = index_counters[(skill, diff)]
             index_counters[(skill, diff)] += 1
@@ -147,6 +168,7 @@ def run_pipeline(csv_path: str, chunk_size: int = 50, dry_run: bool = False, cle
             sol_batch.append(s_doc)
 
         if not dry_run and db is not None:
+            print(f"Batch insert of {len(mod_batch) + len(hard_batch)} questions into MongoDB...")
             counts = bulk_insert_documents(db, mod_batch, hard_batch, sol_batch)
             for k in ("moderate", "hard", "solutions"):
                 totals[k] += counts[k]
@@ -181,14 +203,15 @@ def main():
     p.add_argument("--dry-run", action="store_true", help="Process without inserting into MongoDB")
     p.add_argument("--clear", action="store_true", help="Clear existing documents for skills before inserting")
     p.add_argument("--mock-llm", action="store_true", help="Use mock mutation (no Gemini API calls)")
-    p.add_argument("--model", default=os.getenv("GEMINI_MODEL", "gemini-2.5-flash"), help="Gemini model name")
+    p.add_argument("--model", default=os.getenv("GROQ_MODEL", "qwen/qwen3.8-27b"), help="Groq model name")
     p.add_argument("--db-name", default=os.getenv("MONGODB_DB", "resulistic_db"), help="Target database name")
+    p.add_argument("--skip", type=int, default=0, help="Number of rows to skip (useful for resuming after a crash)")
     args = p.parse_args()
     if not os.path.exists(args.csv):
         print(f"Error: CSV file not found: {args.csv}", file=sys.stderr)
         sys.exit(1)
     run_pipeline(csv_path=args.csv, chunk_size=args.chunk_size, dry_run=args.dry_run,
-                 clear=args.clear, mock_llm=args.mock_llm, model=args.model)
+                 clear=args.clear, mock_llm=args.mock_llm, model=args.model, skip=args.skip)
 
 if __name__ == "__main__":
     main()
