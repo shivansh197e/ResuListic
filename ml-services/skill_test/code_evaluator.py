@@ -43,27 +43,45 @@ def evaluate_code(
         "Provide your evaluation in JSON format:"
     )
 
-    for attempt in range(max_retries):
-        try:
-            resp = client.chat.completions.create(
-                model=model,
-                messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}],
-                response_format={"type": "json_object"},
-                temperature=0.1,
-            )
-            data = json.loads(resp.choices[0].message.content or "{}")
-            return {
-                "passed": bool(data.get("passed", False)),
-                "score": max(0, min(100, int(data.get("score", 0)))),
-                "feedback": str(data.get("feedback", "")),
-                "time_complexity": str(data.get("time_complexity", "O(N)")),
-            }
-        except Exception as e:
-            is_429 = isinstance(e, RateLimitError) or getattr(e, "status_code", None) == 429 or "429" in str(e)
-            if is_429 and attempt < max_retries - 1:
-                time.sleep(0.5 * (2 ** attempt))
-                continue
-            raise
+    models_to_try = []
+    for m in [model, "openai/gpt-oss-120b", "openai/gpt-oss-20b", "qwen/qwen3.8-27b"]:
+        if m and m not in models_to_try:
+            models_to_try.append(m)
+    last_err = None
+
+    for m in models_to_try:
+        for attempt in range(max_retries):
+            try:
+                resp = client.chat.completions.create(
+                    model=m,
+                    messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}],
+                    response_format={"type": "json_object"},
+                    temperature=0.1,
+                )
+                data = json.loads(resp.choices[0].message.content or "{}")
+                if isinstance(data, list) and data:
+                    data = data[0] if isinstance(data[0], dict) else {}
+                elif not isinstance(data, dict):
+                    data = {}
+                return {
+                    "passed": bool(data.get("passed", False)),
+                    "score": max(0, min(100, int(data.get("score", 0)))),
+                    "feedback": str(data.get("feedback", "")),
+                    "time_complexity": str(data.get("time_complexity", "O(N)")),
+                }
+            except Exception as e:
+                last_err = e
+                err_str = str(e).lower()
+                is_retryable = isinstance(e, RateLimitError) or "429" in err_str or "rate limit" in err_str or "503" in err_str
+                if is_retryable and attempt < max_retries - 1:
+                    time.sleep(0.5 * (2 ** attempt))
+                    continue
+                # If fatal on this model, break to try next model
+                break
+
+    if last_err:
+        raise last_err
+    return mock_evaluate_code(code, problem_description, reference_solution)
 
 
 def get_question_and_solution(db, question_id: str) -> Tuple[dict, dict]:
