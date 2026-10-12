@@ -38,6 +38,9 @@ class TestSessionOut(BaseModel):
     total_questions: int = 10
     questions: list[dict]  # Mix of MCQ and Coding question dicts
     created_at: str
+    time_limit_minutes: int = 90
+    started_at: Optional[str] = None
+    expires_at: Optional[str] = None
 
 
 # ── API Request Schemas (received from frontend) ───────────────────────────
@@ -91,4 +94,31 @@ class EvaluateResponse(BaseModel):
     feedback: str
     time_complexity: str
     submission_id: str
+
+
+# ── Job Domain Prediction & Career Switch Schemas ──────────────────────────
+
+class SwitchDomainRecommendation(BaseModel):
+    domain: str
+    confidence: float
+    feasibility: str = "Moderate"
+    overlap_skills: list[str] = Field(default_factory=list)
+    missing_skills: list[str] = Field(default_factory=list)
+
+
+class PredictDomainRequest(BaseModel):
+    user_id: Optional[str] = None
+    skills: Optional[list[str]] = None
+    resume_text: Optional[str] = None
+    mcq_score: Optional[float] = None
+    coding_score: Optional[float] = None
+
+
+class PredictDomainResponse(BaseModel):
+    user_id: Optional[str] = None
+    primary_domain: str
+    confidence: float
+    overall_test_score: float
+    domain_probabilities: dict[str, float]
+    switch_domains: list[SwitchDomainRecommendation]
 

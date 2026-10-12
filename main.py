@@ -6,8 +6,16 @@ from fastapi.middleware.cors import CORSMiddleware
 from pymongo import MongoClient
 from dotenv import load_dotenv
 
+from datetime import datetime, timezone
+
 # Load environment variables early so dependent modules have API keys
 load_dotenv()
+
+# Bootstrap project virtualenv site-packages if available
+_PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
+_venv_site = os.path.join(_PROJECT_ROOT, "venv", "Lib", "site-packages")
+if os.path.exists(_venv_site) and _venv_site not in sys.path:
+    sys.path.insert(0, _venv_site)
 
 # Ensure the ml-services module is accessible
 sys.path.append(os.path.join(os.path.dirname(__file__), 'ml-services'))
@@ -22,6 +30,8 @@ from schema.question_schema import (
     AnswerSubmission,
     EvaluateRequest,
     EvaluateResponse,
+    PredictDomainRequest,
+    PredictDomainResponse,
 )
 
 try:
@@ -33,6 +43,10 @@ from skill_test.code_evaluator import (
     evaluate_code,
     get_question_and_solution,
     save_submission,
+)
+from job_predictor.predictor import (
+    predict_job_domain,
+    predict_for_user,
 )
 
 # Initialize FastAPI App
@@ -165,24 +179,129 @@ async def start_test(request: StartTestRequest):
 @app.post("/api/submit-test")
 async def submit_test(submission: AnswerSubmission):
     """
-    Receives the user's answers. In Phase 5, this will trigger the AI Evaluator.
-    For now, it saves the raw answers to the database.
+    Receives user test answers, enforces the 90-minute session deadline,
+    grades completed MCQ answers against secret keys, and persists submission records.
     """
     # 1. Verify the session exists
     session = test_sessions_collection.find_one({"frontend_payload.session_id": submission.session_id})
     if not session:
+        session = test_sessions_collection.find_one({"session_id": submission.session_id})
+    if not session:
         raise HTTPException(status_code=404, detail="Test session not found.")
-        
-    # 2. Save the submission
+
+    # 2. Enforce session deadline
+    now_dt = datetime.now(timezone.utc)
+    now_iso = now_dt.isoformat()
+
+    expires_at_val = session.get("expires_at") or session.get("frontend_payload", {}).get("expires_at")
+    started_at_val = session.get("started_at") or session.get("frontend_payload", {}).get("started_at") or session.get("frontend_payload", {}).get("created_at")
+
+    is_expired = False
+    duration_seconds = None
+
+    time_limit_val = (
+        session.get("time_limit_minutes")
+        or session.get("frontend_payload", {}).get("time_limit_minutes")
+        or 90
+    )
+    try:
+        time_limit_minutes = float(time_limit_val)
+    except (ValueError, TypeError):
+        time_limit_minutes = 90.0
+
+    if started_at_val:
+        try:
+            if isinstance(started_at_val, datetime):
+                started_dt = started_at_val if started_at_val.tzinfo else started_at_val.replace(tzinfo=timezone.utc)
+            else:
+                started_dt = datetime.fromisoformat(str(started_at_val).replace("Z", "+00:00"))
+                if started_dt.tzinfo is None:
+                    started_dt = started_dt.replace(tzinfo=timezone.utc)
+            duration_seconds = max(0.0, (now_dt - started_dt).total_seconds())
+        except Exception as parse_err:
+            print(f"[WARNING] Could not parse started_at '{started_at_val}': {parse_err}")
+
+    if expires_at_val:
+        try:
+            if isinstance(expires_at_val, datetime):
+                expires_dt = expires_at_val if expires_at_val.tzinfo else expires_at_val.replace(tzinfo=timezone.utc)
+            else:
+                expires_dt = datetime.fromisoformat(str(expires_at_val).replace("Z", "+00:00"))
+                if expires_dt.tzinfo is None:
+                    expires_dt = expires_dt.replace(tzinfo=timezone.utc)
+            if now_dt >= expires_dt:
+                is_expired = True
+        except Exception as parse_err:
+            print(f"[WARNING] Could not parse expires_at '{expires_at_val}': {parse_err}")
+
+    # Fallback: if expires_at was absent or unparseable, check against started_at + time limit
+    if not is_expired and duration_seconds is not None:
+        if duration_seconds >= (time_limit_minutes * 60.0):
+            is_expired = True
+
+    if is_expired:
+        status = "submitted_expired"
+        dur_msg = f"{duration_seconds:.1f}s" if duration_seconds is not None else "unknown duration"
+        print(f"[WARNING] Session {submission.session_id} submitted after 90m expiration. Duration taken: {dur_msg}.")
+    else:
+        status = "submitted"
+
+    # 3. Grade completed questions against session evaluation key
+    eval_key = session.get("evaluation_key", {})
+    mcq_correct = 0
+    mcq_total = 0
+    graded_answers = []
+
+    for ans in submission.answers:
+        q_idx = str(ans.get("q_index", ""))
+        raw_user_ans = ans.get("user_answer")
+        user_ans = str(raw_user_ans).strip().upper() if raw_user_ans is not None else ""
+        ev = eval_key.get(q_idx) or eval_key.get(int(q_idx) if q_idx.isdigit() else -1)
+        if ev and ev.get("question_type") == "mcq":
+            mcq_total += 1
+            corr = str(ev.get("correct_answer", "")).strip().upper()
+            is_corr = bool(user_ans and user_ans == corr)
+            if is_corr:
+                mcq_correct += 1
+            graded_answers.append({
+                "q_index": ans.get("q_index"),
+                "user_answer": raw_user_ans,
+                "correct_answer": corr,
+                "is_correct": is_corr,
+            })
+        else:
+            graded_answers.append(ans)
+
+    # 4. Save the submission document
     submission_doc = submission.model_dump()
-    submission_doc["status"] = "pending_evaluation"
-    
+    submission_doc["status"] = status
+    submission_doc["is_expired"] = is_expired
+    submission_doc["submitted_at"] = now_iso
+    if duration_seconds is not None:
+        submission_doc["duration_seconds"] = duration_seconds
+    if mcq_total > 0:
+        score_val = round((mcq_correct / mcq_total) * 100.0, 1)
+        submission_doc["score"] = score_val
+        submission_doc["mcq_score"] = score_val
+        submission_doc["mcq_correct"] = mcq_correct
+        submission_doc["mcq_total"] = mcq_total
+    submission_doc["graded_answers"] = graded_answers
+
     test_submissions_collection.insert_one(submission_doc)
-    
+
     return {
-        "status": "submitted",
+        "status": status,
         "session_id": submission.session_id,
-        "message": "Test submitted successfully. Evaluation pending Phase 5."
+        "is_expired": is_expired,
+        "score": submission_doc.get("score"),
+        "mcq_score": submission_doc.get("mcq_score"),
+        "message": (
+            "Test submitted after deadline. Completed answers evaluated."
+            if is_expired
+            else "Test submitted successfully."
+        ),
+        "duration_seconds": duration_seconds,
+        "questions_answered": len(submission.answers),
     }
 
 
@@ -232,4 +351,33 @@ async def evaluate_submission(request: EvaluateRequest):
         raise
     except Exception as e:
         raise HTTPException(status_code=422, detail=f"Evaluation failed: {str(e)}")
+
+
+@app.post("/api/predict-domain", response_model=PredictDomainResponse)
+async def predict_domain_endpoint(request: PredictDomainRequest):
+    """
+    Evaluates candidate resume skills and test performance to predict their primary job domain,
+    class probabilities, and actionable career switch recommendations with skill gap analysis.
+    """
+    try:
+        # Case A: user_id provided without direct skills -> resolve from MongoDB
+        if request.user_id and not request.skills and request.mcq_score is None and request.coding_score is None:
+            res = predict_for_user(db, request.user_id)
+            res["user_id"] = request.user_id
+            return PredictDomainResponse(**res)
+
+        # Case B: Direct skills / test scores passed in payload (or hybrid)
+        res = predict_job_domain(
+            skills=request.skills or [],
+            resume_text=request.resume_text,
+            mcq_score=request.mcq_score,
+            coding_score=request.coding_score,
+        )
+        res["user_id"] = request.user_id
+        return PredictDomainResponse(**res)
+
+    except ValueError as ve:
+        raise HTTPException(status_code=404, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Domain prediction failed: {str(e)}")
 

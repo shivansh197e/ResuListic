@@ -11,6 +11,7 @@ import argparse
 import ast
 import csv
 import os
+import re
 import sys
 
 FIELDNAMES = ["title", "description", "solution", "skill", "difficulty"]
@@ -25,21 +26,28 @@ def extract_skill(raw_topics: str) -> tuple[str, bool]:
         return "Python", True
 
     s = raw_topics.strip()
-    if s in ("[]", "None", "nan", "null"):
+    if s.lower() in ("[]", "none", "nan", "null") or re.sub(r"\s+", "", s) == "[]":
         return "Python", True
 
     try:
         parsed = ast.literal_eval(s)
-        if isinstance(parsed, list) and len(parsed) > 0 and parsed[0]:
-            clean = str(parsed[0]).strip()
-            if clean:
-                return clean, False
+        if isinstance(parsed, list):
+            if not parsed or all(not str(item).strip() for item in parsed):
+                return "Python", True
+            for item in parsed:
+                # If item is an empty list/tuple/dict, it has no valid topic
+                if isinstance(item, (list, tuple, dict)) and not item:
+                    continue
+                clean = str(item).strip()
+                if clean and clean.lower() not in ("none", "nan", "null", "[]"):
+                    return clean, False
+            return "Python", True
     except (ValueError, SyntaxError):
         pass
 
     # Fallback strip for malformed list strings
     clean = s.strip("[]'\" ").split(",")[0].strip("[]'\" ")
-    if clean:
+    if clean and clean.lower() not in ("none", "nan", "null"):
         return clean, False
 
     return "Python", True

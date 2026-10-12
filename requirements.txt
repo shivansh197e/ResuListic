@@ -25,3 +25,7 @@ lxml==6.1.1                 # XML/HTML parsing (used by python-docx internally)
 python-multipart            # FastAPI form and file upload support
 groq>=0.11.0                # Groq Cloud SDK for Llama-3 code evaluation
 
+# ── Machine Learning & Job Classifier ────────────────────────
+scikit-learn>=1.4.0         # Model training, evaluation, and pipeline
+joblib>=1.3.0               # Model serialization
+matplotlib>=3.8.0           # ROC curve, PR curve, and confusion matrix visualization

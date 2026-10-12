@@ -5,7 +5,7 @@ question_selector.py — Assembles a 10-question test session.
 
 import re
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import List, Optional
 from pymongo.database import Database
 
@@ -97,7 +97,7 @@ def _distribute(skills: list[str], total: int) -> dict[str, int]:
     return {s: base + (1 if i < rem else 0) for i, s in enumerate(skills)}
 
 
-def generate_test_session(db: Database, user_id: str, selected_skills: list[str]) -> dict:
+def generate_test_session(db: Database, user_id: str, selected_skills: list[str], time_limit_minutes: int = 90) -> dict:
     """
     Build 10-question test. Returns:
       {"frontend_payload": dict (no answers), "evaluation_key": dict (secret answers)}
@@ -224,10 +224,29 @@ def generate_test_session(db: Database, user_id: str, selected_skills: list[str]
         ev["question_type"] = pub["question_type"]
         evaluation_key[str(idx)] = ev
 
+    started_dt = datetime.now(timezone.utc)
+    expires_dt = started_dt + timedelta(minutes=time_limit_minutes)
+    started_at = started_dt.isoformat()
+    expires_at = expires_dt.isoformat()
+
     session_out = TestSessionOut(
-        session_id=session_id, user_id=user_id, skills_tested=selected_skills,
-        total_questions=len(public_questions), questions=public_questions,
-        created_at=datetime.now(timezone.utc).isoformat(),
+        session_id=session_id,
+        user_id=user_id,
+        skills_tested=selected_skills,
+        total_questions=len(public_questions),
+        questions=public_questions,
+        created_at=started_at,
+        time_limit_minutes=time_limit_minutes,
+        started_at=started_at,
+        expires_at=expires_at,
     )
 
-    return {"frontend_payload": session_out.model_dump(), "evaluation_key": evaluation_key}
+    return {
+        "session_id": session_id,
+        "user_id": user_id,
+        "frontend_payload": session_out.model_dump(),
+        "evaluation_key": evaluation_key,
+        "time_limit_minutes": time_limit_minutes,
+        "started_at": started_at,
+        "expires_at": expires_at,
+    }
