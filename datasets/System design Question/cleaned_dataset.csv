@@ -1,0 +1,132 @@
+title,description,solution,skill,difficulty
+Reverse a String,"Given a string s , reverse the string. Examples: Input: s = ""Geeks"" Output: ""skeeG"" Input: s = ""for"" Output: ""rof"" Input: s = ""a"" Output: ""a""","#include <bits/stdc++.h>
+using namespace std;
+
+/* Function to print reverse of the passed string */
+void reverse(string str) 
+{ 
+    if(str.size() == 0)
+    {
+        return;
+    }
+    reverse(str.substr(1));
+    cout << str[0];
+} 
+
+/* Driver program to test above function */
+int main() 
+{ 
+    string a = ""Geeks for Geeks""; 
+    reverse(a); 
+    return 0; 
+} 
+
+// This is code is contributed by rathbhupendra",System Design,Basic
+Largest in Array,"Given an array arr[]. The task is to find the largest element and return it. Examples: Input: arr[] = [1, 8, 7, 56, 90] Output: 90 Explanation: The largest element of the given array is 90. Input: arr[] = [5, 5, 5, 5] Output: 5 Explanation: The largest element of the given array is 5. Input: arr[] = [10] Output: 10 Explanation: There is only one element which is the largest.","#include <iostream>
+#include <vector>
+using namespace std;
+
+int largest(vector<int>& arr) {
+    int max = arr[0];
+
+    //Traverse  from second and compare
+    // every element with current max
+    for (int i = 1; i < arr.size(); i++)
+        if (arr[i] > max)
+            max = arr[i];
+
+    return max;
+}
+
+int main() {
+    vector<int> arr = {20, 10, 20, 4, 100};
+    cout << largest(arr);
+    return 0;
+}",System Design,Basic
+Missing in Array,"You are given an array arr[] of size n - 1 that contains distinct integers in the range from 1 to n (inclusive). This array represents a permutation of the integers from 1 to n with one element missing. Your task is to identify and return the missing element. Examples: Input: arr[] = [1, 2, 3, 5] Output: 4 Explanation: All the numbers from 1 to 5 are present except 4. Input: arr[] = [8, 2, 4, 5, 3, 7, 1] Output: 6 Explanation: All the numbers from 1 to 8 are present except 6. Input: arr[] = [1] Output: 2 Explanation: Only 1 is present so the missing element is 2. Constraints: 1 ≤ arr.size() ≤ 10 6 1 ≤ arr[i] ≤ arr.size() + 1","#include <iostream>
+#include <vector>
+using namespace std;
+
+int missingNum(vector<int>& arr) {
+    int n = arr.size() + 1;
+
+    // Iterate from 1 to n and check
+    // if the current number is present
+    for (int i = 1; i <= n; i++) {
+        bool found = false;
+        for (int j = 0; j < n - 1; j++) {
+            if (arr[j] == i) {
+                found = true;
+                break;
+            }
+        }
+
+        // If the current number is not present
+        if (!found)
+            return i;
+    }
+    return -1;
+}
+
+int main() {
+    vector<int> arr = {8, 2, 4, 5, 3, 7, 1}; 
+    cout << missingNum(arr) << endl; 
+    return 0;
+}",System Design,Easy
+"Sort 0s, 1s and 2s","Given an array arr[] containing only 0s, 1s, and 2s . Sort the array in ascending order. Examples: Input: arr[] = [0, 1, 2, 0, 1, 2] Output: [0, 0, 1, 1, 2, 2] Explanation: 0s, 1s and 2s are segregated into ascending order. Input: arr[] = [0, 1, 1, 0, 1, 2, 1, 2, 0, 0, 0, 1] Output: [0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 2, 2] Explanation: 0s, 1s and 2s are segregated into ascending order. Follow up: Could you come up with a one-pass algorithm using only constant extra space?","#include <iostream>
+#include <vector>
+#include <algorithm>
+using namespace std;
+
+void sort012(vector<int> &arr) {
+    
+    // standard sorting function
+    sort(arr.begin(), arr.end()); 
+}
+
+int main() {
+    vector<int> arr = {0, 1, 2, 0, 1, 2};
+    
+    sort012(arr);
+
+    for (int i = 0; i < arr.size(); i++)
+        cout << arr[i] << "" "";
+    return 0;
+}",System Design,Medium
+Palindrome String,"Given a string s , find if it is a palindrome. A string is considered a palindrome if it reads the same forwards and backwards. Examples : Input: s = ""abba"" Output: true Explanation: ""abba"" reads the same forwards and backwards, so it is a palindrome. Input: s = ""abc"" Output: false Explanation: ""abc"" does not read the same forwards and backwards, so it is not a palindrome.","#include <bits/stdc++.h>
+using namespace std;
+
+bool isPalindrome(string &s) {
+
+    // Initialize two pointers: one at the beginning (left)
+    // and one at the end (right)
+    int left = 0;
+    int right = s.length() - 1;
+
+    // Continue looping while the two pointers
+    // have not crossed each other
+    while (left < right) {
+
+        // If the characters at the current positions are not equal,
+        // return false (not a palindrome)
+        if (s[left] != s[right])
+            return false;
+
+        // Move the left pointer to the right
+        // and the right pointer to the left
+        left++;
+        right--;
+    }
+
+    // If no mismatch is found,
+    // return true (the string is a palindrome)
+    return true;
+}
+
+int main() {
+    string s = ""abba"";
+
+    cout << boolalpha << isPalindrome(s) << endl;
+
+    return 0;
+}",System Design,Basic

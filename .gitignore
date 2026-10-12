@@ -216,3 +216,30 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# test resume
+ml-services/data/test_resumes/
+
+# Ignore all resume document formats globally
+*.pdf
+*.docx
+# Environment / secret files
+*.env
+.env
+.env.*
+!.env.example
+
+# Antigravity / AI Agent configurations
+.agents/
+
+# Temporary uploads and ephemeral runtime files
+temp_uploads/*
+!temp_uploads/.gitkeep
+
+# Heavy external raw dataset dumps (keep repo lightweight)
+datasets/job prediction dataset/
+datasets/leetcode_problems.csv
+datasets/leetcode_problems.json
+
+# Local logs and debug outputs
+*.log

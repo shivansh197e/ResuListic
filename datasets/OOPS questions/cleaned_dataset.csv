@@ -1,0 +1,338 @@
+title,description,solution,skill,difficulty
+Class and Object,"OOPS
+Object-Oriented Programming is a programming paradigm where we model programs using objects that represent real-world entities.
+Instead of only thinking in terms of functions and data separately, OOPS combines data (attributes) and behavior (methods) into a single unit called a class.
+Object = (State, Behavior)
+Where:
+State → variables
+Behavior → functions
+
+Class and Object
+Class
+A class is a blueprint or template.
+Object
+An object is an instance of a class.
+Example analogy:
+Class → Car
+Object → Ford, Toyata","# Class definition
+class Car:
+    def __init__(self, brand, color):
+        # Properties (attributes)
+        self.brand = brand
+        self.color = color
+        self.speed = 0
+
+    # Methods (behavior)
+    def start(self):
+        print(f""{self.brand} car has started"")
+
+    def accelerate(self, value):
+        self.speed += value
+        print(f""{self.brand} speed is now {self.speed} km/h"")",OOPS,Medium
+Problem!!,"Problem!!
+Problem Statement
+Create a class named Student that represents a student in a class.
+The class should have the following:
+Properties (Attributes)
+- name → name of the student
+- roll_no → roll number of the student
+- marks → marks obtained (initially 0)
+Methods
+- display_info() : Prints the student’s name, roll number, and marks
+- add_marks(value) : Adds the given value to the student’s marks","class Student:
+    def __init__(self, name, roll_no):
+        self.name = name
+        self.roll_no = roll_no
+        self.marks = 0   # initially marks = 0
+
+    def add_marks(self, value):
+        self.marks += value # self.marks=self.marks+value =0+35=35
+
+    def display_info(self):
+        print(""Name:"", self.name)
+        print(""Roll No:"", self.roll_no)
+        print(""Marks:"", self.marks)",OOPS,Medium
+Encapsulation is about protecting data inside a class.,"Encapsulation
+
+Encapsulation is about protecting data inside a class.
+It means keeping data (properties) and methods together in a class, while controlling how the data can be accessed from outside the class.
+This prevents accidental changes to your data and hides the internal details of how your class works.
+A class is an example of encapsulation as it encapsulates all the data that is member functions, variables, etc.
+
+In Python, this is done using naming conventions:
+- _var → protected
+- __var → private","class BankAccount:
+    def __init__(self, account_holder, initial_balance):
+        self.account_holder = account_holder      # public
+        self.__balance = initial_balance           # private (encapsulated)
+
+    def deposit(self, amount):
+        if amount <= 0:
+            raise ValueError(""Deposit amount must be positive"")
+        self.__balance += amount
+
+    def withdraw(self, amount):
+        if amount <= 0:
+            raise ValueError(""Withdrawal amount must be positive"")
+        if amount > self.__balance:
+            raise ValueError(""Insufficient balance"")
+        self.__balance -= amount
+
+    def get_balance(self):
+        return self.__balance",OOPS,Medium
+Inheritance,"Inheritance
+Inheritance allows a class (child class) to acquire properties and methods of another class (parent class). It supports hierarchical classification and promotes code reuse.","## parent class
+class Animal:
+    def __init__(self, name):
+        self.name = name
+
+    def speak(self):
+        print(""Animal makes a sound"")",OOPS,Medium
+OOPS Concept,OOPS Concept,"## child class
+
+class Dog(Animal):
+    def speak(self):
+        print(f""{self.name} says: Bark"")",OOPS,Medium
+Polymorphism,"Child = Parent + Extra / Modified behavior
+
+Polymorphism
+Polymorphism in Python means ""same operation, different behavior."" It allows functions or methods with the same name to work differently depending on the type of object they are acting upon.","class Shape:
+    def calculateArea(self):
+        pass
+class Circle(Shape):
+    def __init__(self, radius):
+        self.radius = radius
+
+    def calculateArea(self):# same method
+        return 3.14 * self.radius * self.radius #behaviour diff( Circle area)
+
+
+class Rectangle(Shape):
+    def __init__(self, length, width):
+        self.length = length
+        self.width = width
+
+    def calculateArea(self):
+        return self.length * self.width
+
+
+class Triangle(Shape):
+    def __init__(self, base, height):
+        self.base = base
+        self.height = height
+
+    def calculateArea(self):
+        return 0.5 * self.base * self.height
+
+
+shapes = [
+    Circle(5),
+    Rectangle(10, 4),
+    Triangle(6, 8)
+]
+
+for shape in shapes:
+    print(shape.calculateArea())",OOPS,Medium
+Abstraction,"Abstraction
+Abstraction hides implementation details and shows only essential features.","from abc import ABC, abstractmethod
+
+class Shape(ABC):
+
+    @abstractmethod
+    def area(self):
+        pass",OOPS,Medium
+Encapsulation code,"Encapsulation code
+A company wants to manage details of newly joined employees.
+Each employee has:
+- employee_id (int)
+- name (string)
+- basic_salary (float)
+- department (string)
+The company follows these rules:
+1. HRA = 20% of basic salary
+2. DA = 10% of basic salary
+3. Gross Salary = basic + HRA + DA
+If gross salary > 80,000 → employee is Senior Level Else → Junior Level
+Tasks:
+- Create a class Employee
+- Use a constructor to initialize employee details
+- Create methods to:
+- calculate gross salary
+- determine employee level
+- display employee details","class Employee:
+    def __init__(self, emp_id, name, basic_salary, department):
+        self.emp_id = emp_id
+        self.name = name
+        self.basic_salary = basic_salary
+        self.department = department
+
+    def calculate_gross_salary(self):
+        hra = 0.20 * self.basic_salary
+        da = 0.10 * self.basic_salary
+        gross_salary = self.basic_salary + hra + da
+        return gross_salary
+
+    def employee_level(self):
+        gross_salary = self.calculate_gross_salary()
+        if gross_salary > 80000:
+            return ""Senior Level""
+        else:
+            return ""Junior Level""
+
+    def display(self):
+        print(""Employee ID:"", self.emp_id)
+        print(""Name:"", self.name)
+        print(""Department:"", self.department)
+        print(""Basic Salary:"", self.basic_salary)
+        print(""Gross Salary:"", self.calculate_gross_salary())
+        print(""Level:"", self.employee_level())",OOPS,Medium
+Inheritance code,"Inheritance code
+
+A company manages devices used by employees.
+Every device has:
+- brand
+- model
+There are different types of devices.
+A Laptop is a type of Device and has an extra feature:
+- battery_life (in hours)
+A MobilePhone is also a type of Device and has an extra feature:
+- camera_quality (in MP)
+Tasks
+- Create a base class Device
+- Create two derived classes:
+- Laptop
+- MobilePhone
+Use inheritance so that:
+- Common properties are in Device
+- Specific properties are in child classes
+- Create objects of Laptop and MobilePhone
+- Display their details","class Device:
+  def __init__(self, brand, model):
+    self.brand=brand
+    self.model=model
+
+  def show_device_info(self):
+    print(""Brand:"", self.brand)
+    print(""Model:"", self.model)
+
+class laptop(Device):
+  def __init__(self, brand, model, battery_life):
+    super().__init__(brand, model)
+    self.battery_life=battery_life
+
+  def show_laptop_info(self):
+    self.show_device_info()
+    print(""Battery Life:"", self.battery_life, ""hours"")
+
+class MobilePhone(Device):
+  def __init__(self, brand, model, camera_quality):
+    super().__init__(brand, model)
+    self.camera_quality=camera_quality
+
+  def show_mobile_phone_info(self):
+    self.show_device_info()
+    print(""Camera Quality:"", self.camera_quality, ""MP"")",OOPS,Medium
+Abstraction code,Abstraction code,"# Import ABC (Abstract Base Class) and abstractmethod
+from abc import ABC, abstractmethod
+
+
+# Abstract Base Class
+class Vehicle(ABC):
+    def __init__(self, make, model, year):
+        # Initializing common attributes
+        self.make = make
+        self.model = model
+        self.year = year
+
+    # Abstract method (no implementation here)
+    @abstractmethod
+    def display_info(self):
+        pass
+        # This method MUST be implemented by child classes
+
+
+# Child class inheriting Vehicle
+class Car(Vehicle):
+    def __init__(self, make, model, year, num_doors):
+        # Call parent class constructor to initialize make, model, year
+        super().__init__(make, model, year)
+
+        # Initialize Car-specific attribute
+        self.num_doors = num_doors
+
+    # Implementing abstract method
+    def display_info(self):
+        print(f""Car: {self.year}, {self.make}, {self.model}, {self.num_doors} doors"")",OOPS,Medium
+A shopping app supports different payment methods.,"A shopping app supports different payment methods.
+Every payment method must implement a method called pay().
+- CreditCardPayment → prints “Payment done using Credit Card”
+- UpiPayment → prints “Payment done using UPI”
+Tasks
+- Create an abstract class Payment
+- Add an abstract method pay()
+- Create child classes CreditCardPayment and UpiPayment
+- Implement pay() in both child classes","# Import required modules for abstraction
+from abc import ABC, abstractmethod
+
+
+# Abstract base class
+class Payment(ABC):
+
+    # Abstract method (no implementation here)
+    @abstractmethod
+    def pay(self):
+        pass
+        # This method must be implemented by all child classes
+
+
+# Child class 1
+class CreditCardPayment(Payment):
+
+    # Implementing abstract method
+    def pay(self):
+        print(""Payment done using Credit Card"")
+
+
+# Child class 2
+class UpiPayment(Payment):
+
+    # Implementing abstract method
+    def pay(self):
+        print(""Payment done using UPI"")",OOPS,Medium
+Polymorphism code,"Polymorphism code
+A Zoo has different animals.
+Every animal can make a sound, but the sound is different for each animal.
+- Dog → barks
+- Cat → meows
+- Cow → moos
+All animals have a method called sound().
+Task
+1. Create a base class Animal
+2. Define a method sound() in the base class
+3. Create child classes:
+- Dog
+- Cat
+- Cow
+4. Override the sound() method in each child class
+5. Use a loop to call sound() for different animals","# Base class
+class Animal:
+    def sound(self):
+        print(""Animal makes a sound"")
+
+
+# Child class 1
+class Dog(Animal):
+    def sound(self):
+        print(""Dog barks"")
+
+
+# Child class 2
+class Cat(Animal):
+    def sound(self):
+        print(""Cat meows"")
+
+
+# Child class 3
+class Cow(Animal):
+    def sound(self):
+        print(""Cow moos"")",OOPS,Medium
