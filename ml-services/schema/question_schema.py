@@ -122,3 +122,34 @@ class PredictDomainResponse(BaseModel):
     domain_probabilities: dict[str, float]
     switch_domains: list[SwitchDomainRecommendation]
 
+
+# ── Salary Prediction Schemas ──────────────────────────────────────────────
+
+class SalaryFactor(BaseModel):
+    factor: str
+    impact: str
+
+
+class SalaryRange(BaseModel):
+    min_lpa: float
+    max_lpa: float
+
+
+class PredictSalaryRequest(BaseModel):
+    user_id: Optional[str] = None
+    skills: Optional[list[str]] = None
+    domain: Optional[str] = None
+    mcq_score: Optional[float] = None
+    coding_score: Optional[float] = None
+    experience_tier: Optional[str] = "fresher"
+
+
+class PredictSalaryResponse(BaseModel):
+    user_id: Optional[str] = None
+    predicted_lpa: float
+    salary_range: SalaryRange
+    compensation_tier: str
+    domain: str
+    overall_test_score: float
+    factors: list[SalaryFactor] = Field(default_factory=list)
+

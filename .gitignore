@@ -231,3 +231,15 @@ ml-services/data/test_resumes/
 
 # Antigravity / AI Agent configurations
 .agents/
+
+# Temporary uploads and ephemeral runtime files
+temp_uploads/*
+!temp_uploads/.gitkeep
+
+# Heavy external raw dataset dumps (keep repo lightweight)
+datasets/job prediction dataset/
+datasets/leetcode_problems.csv
+datasets/leetcode_problems.json
+
+# Local logs and debug outputs
+*.log

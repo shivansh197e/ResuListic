@@ -1,0 +1,21 @@
+{
+  "Gradient Boosting Regressor": {
+    "cv_r2_mean": 0.9736,
+    "test_r2": 0.9743,
+    "test_mae_lpa": 0.7057,
+    "test_rmse_lpa": 0.8943
+  },
+  "Random Forest Regressor": {
+    "cv_r2_mean": 0.9585,
+    "test_r2": 0.9585,
+    "test_mae_lpa": 0.9041,
+    "test_rmse_lpa": 1.1357
+  },
+  "Ridge Regressor": {
+    "cv_r2_mean": 0.9573,
+    "test_r2": 0.9518,
+    "test_mae_lpa": 0.9447,
+    "test_rmse_lpa": 1.2245
+  },
+  "best_model": "Gradient Boosting Regressor"
+}

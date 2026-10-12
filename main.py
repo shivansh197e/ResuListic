@@ -32,6 +32,8 @@ from schema.question_schema import (
     EvaluateResponse,
     PredictDomainRequest,
     PredictDomainResponse,
+    PredictSalaryRequest,
+    PredictSalaryResponse,
 )
 
 try:
@@ -47,6 +49,10 @@ from skill_test.code_evaluator import (
 from job_predictor.predictor import (
     predict_job_domain,
     predict_for_user,
+)
+from salary_predictor.predictor import (
+    predict_salary,
+    predict_salary_for_user,
 )
 
 # Initialize FastAPI App
@@ -183,9 +189,13 @@ async def submit_test(submission: AnswerSubmission):
     grades completed MCQ answers against secret keys, and persists submission records.
     """
     # 1. Verify the session exists
-    session = test_sessions_collection.find_one({"frontend_payload.session_id": submission.session_id})
-    if not session:
-        session = test_sessions_collection.find_one({"session_id": submission.session_id})
+    clean_session_id = str(submission.session_id).strip()
+    session = (
+        test_sessions_collection.find_one({"frontend_payload.session_id": submission.session_id})
+        or test_sessions_collection.find_one({"session_id": submission.session_id})
+        or test_sessions_collection.find_one({"frontend_payload.session_id": clean_session_id})
+        or test_sessions_collection.find_one({"session_id": clean_session_id})
+    )
     if not session:
         raise HTTPException(status_code=404, detail="Test session not found.")
 
@@ -285,6 +295,9 @@ async def submit_test(submission: AnswerSubmission):
         submission_doc["mcq_score"] = score_val
         submission_doc["mcq_correct"] = mcq_correct
         submission_doc["mcq_total"] = mcq_total
+    else:
+        submission_doc["mcq_correct"] = 0
+        submission_doc["mcq_total"] = 0
     submission_doc["graded_answers"] = graded_answers
 
     test_submissions_collection.insert_one(submission_doc)
@@ -380,4 +393,34 @@ async def predict_domain_endpoint(request: PredictDomainRequest):
         raise HTTPException(status_code=404, detail=str(ve))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Domain prediction failed: {str(e)}")
+
+
+@app.post("/api/predict-salary", response_model=PredictSalaryResponse)
+async def predict_salary_endpoint(request: PredictSalaryRequest):
+    """
+    Evaluates candidate resume skills and assessment performance to predict compensation
+    (ranging from 4 LPA to 30+ LPA) with confidence range and salary breakdown factors.
+    """
+    try:
+        # Case A: user_id provided without direct skills -> resolve from MongoDB
+        if request.user_id and not request.skills and request.mcq_score is None and request.coding_score is None:
+            res = predict_salary_for_user(db, request.user_id)
+            res["user_id"] = request.user_id
+            return PredictSalaryResponse(**res)
+
+        # Case B: Direct skills / test scores passed in payload
+        res = predict_salary(
+            skills=request.skills or [],
+            domain=request.domain,
+            mcq_score=request.mcq_score,
+            coding_score=request.coding_score,
+            experience_tier=request.experience_tier or "fresher",
+        )
+        res["user_id"] = request.user_id
+        return PredictSalaryResponse(**res)
+
+    except ValueError as ve:
+        raise HTTPException(status_code=404, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Salary prediction failed: {str(e)}")
 

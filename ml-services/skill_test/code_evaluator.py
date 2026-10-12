@@ -73,9 +73,12 @@ def evaluate_code(
                 last_err = e
                 err_str = str(e).lower()
                 is_retryable = isinstance(e, RateLimitError) or "429" in err_str or "rate limit" in err_str or "503" in err_str
-                if is_retryable and attempt < max_retries - 1:
-                    time.sleep(0.5 * (2 ** attempt))
-                    continue
+                if is_retryable:
+                    if attempt < max_retries - 1:
+                        time.sleep(0.5 * (2 ** attempt))
+                        continue
+                    else:
+                        raise e
                 # If fatal on this model, break to try next model
                 break
 

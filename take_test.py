@@ -229,7 +229,7 @@ def main():
                 from skill_test.code_evaluator import mock_evaluate_code
                 res = mock_evaluate_code(code_submission, desc, ref_sol)
 
-            code_score = res.get("score", 70)
+            code_score = res.get("score", 0)
             coding_scores.append(code_score)
 
             print(f"-> Passed: {res.get('passed')}")
@@ -265,7 +265,7 @@ def main():
     )
     try:
         sub_doc = {
-            "session_id": payload.get("session_id"),
+            "session_id": payload.get("session_id") or session.get("session_id"),
             "user_id": user_id,
             "answers": answered_submissions,
             "status": submission_status,
@@ -296,8 +296,8 @@ def main():
             mcq_pct = 0.0
             avg_code = 0.0
         else:
-            mcq_pct = (score / max(1, total_eval)) * 100.0 if total_eval > 0 else (avg_code_score if avg_code_score is not None else 70.0)
-            avg_code = avg_code_score if avg_code_score is not None else (mcq_pct if total_eval > 0 else 70.0)
+            mcq_pct = (score / max(1, total_eval)) * 100.0 if total_eval > 0 else (avg_code_score if avg_code_score is not None else 0.0)
+            avg_code = avg_code_score if avg_code_score is not None else (mcq_pct if total_eval > 0 else 0.0)
         
         pred = predict_job_domain(
             skills=selected_skills,
@@ -319,6 +319,29 @@ def main():
             if missing:
                 print(f"    Required skills to switch:  {missing}")
         print("=" * 60 + "\n")
+
+        # ── Compensation Estimation & Salary Prediction ─────────────────────
+        try:
+            from salary_predictor.predictor import predict_salary
+            sal = predict_salary(
+                skills=selected_skills,
+                domain=pred.get("primary_domain"),
+                mcq_score=mcq_pct,
+                coding_score=avg_code,
+            )
+            print("=" * 60)
+            print("   COMPENSATION ESTIMATION & SALARY PREDICTION")
+            print("=" * 60)
+            print(f"Estimated Salary Package:   {sal['predicted_lpa']} LPA")
+            print(f"Expected Compensation Range: {sal['salary_range']['min_lpa']} LPA - {sal['salary_range']['max_lpa']} LPA")
+            print(f"Market Compensation Bracket: {sal['compensation_tier']}")
+            print("\nKey Compensation Drivers:")
+            for fac in sal.get("factors", []):
+                print(f"  • {fac['factor']:<42} [{fac['impact']}]")
+            print("=" * 60 + "\n")
+        except Exception as se:
+            print(f"[Notice] Salary prediction report skipped: {se}")
+
     except Exception as e:
         print(f"[Notice] Domain prediction report skipped: {e}")
 
