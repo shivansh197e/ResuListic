@@ -242,4 +242,6 @@ datasets/leetcode_problems.csv
 datasets/leetcode_problems.json
 
 # Local logs and debug outputs
-*.log
+*.log
+node_modules/
+
