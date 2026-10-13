@@ -2,7 +2,7 @@
 question_schema.py — Pydantic data contracts for the Skill Test Module.
 """
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, AliasChoices, ConfigDict
 from typing import Optional
 
 
@@ -46,14 +46,21 @@ class TestSessionOut(BaseModel):
 # ── API Request Schemas (received from frontend) ───────────────────────────
 
 class StartTestRequest(BaseModel):
-    user_id: str
-    selected_skills: Optional[list[str]] = None  # None = auto-pick top 5
+    model_config = ConfigDict(populate_by_name=True)
+
+    user_id: str = Field(validation_alias=AliasChoices("user_id", "userId"))
+    selected_skills: Optional[list[str]] = Field(default=None, validation_alias=AliasChoices("selected_skills", "selectedSkills"))  # None = auto-pick top 5
 
 
 class AnswerSubmission(BaseModel):
-    session_id: str
-    user_id: str
+    model_config = ConfigDict(populate_by_name=True)
+
+    session_id: str = Field(validation_alias=AliasChoices("session_id", "sessionId"))
+    user_id: str = Field(validation_alias=AliasChoices("user_id", "userId"))
     answers: list[dict]  # [{"q_index": 0, "user_answer": "B"}, ...]
+
+
+TestSubmissionRequest = AnswerSubmission
 
 
 # ── Internal State Schema ──────────────────────────────────────────────────
@@ -70,11 +77,13 @@ class UserTestState(BaseModel):
 # ── Code Evaluator Schemas (Phase 3b) ──────────────────────────────────────
 
 class EvaluateRequest(BaseModel):
-    user_id: str
-    question_id: str
+    model_config = ConfigDict(populate_by_name=True)
+
+    user_id: str = Field(validation_alias=AliasChoices("user_id", "userId"))
+    question_id: str = Field(validation_alias=AliasChoices("question_id", "questionId"))
     code: str
-    problem_description: Optional[str] = None
-    reference_solution: Optional[str] = None
+    problem_description: Optional[str] = Field(default=None, validation_alias=AliasChoices("problem_description", "problemDescription"))
+    reference_solution: Optional[str] = Field(default=None, validation_alias=AliasChoices("reference_solution", "referenceSolution"))
     mock: Optional[bool] = False
 
 
@@ -107,11 +116,13 @@ class SwitchDomainRecommendation(BaseModel):
 
 
 class PredictDomainRequest(BaseModel):
-    user_id: Optional[str] = None
+    model_config = ConfigDict(populate_by_name=True)
+
+    user_id: Optional[str] = Field(default=None, validation_alias=AliasChoices("user_id", "userId"))
     skills: Optional[list[str]] = None
-    resume_text: Optional[str] = None
-    mcq_score: Optional[float] = None
-    coding_score: Optional[float] = None
+    resume_text: Optional[str] = Field(default=None, validation_alias=AliasChoices("resume_text", "resumeText"))
+    mcq_score: Optional[float] = Field(default=None, validation_alias=AliasChoices("mcq_score", "mcqScore"))
+    coding_score: Optional[float] = Field(default=None, validation_alias=AliasChoices("coding_score", "codingScore"))
 
 
 class PredictDomainResponse(BaseModel):
@@ -136,12 +147,14 @@ class SalaryRange(BaseModel):
 
 
 class PredictSalaryRequest(BaseModel):
-    user_id: Optional[str] = None
+    model_config = ConfigDict(populate_by_name=True)
+
+    user_id: Optional[str] = Field(default=None, validation_alias=AliasChoices("user_id", "userId"))
     skills: Optional[list[str]] = None
     domain: Optional[str] = None
-    mcq_score: Optional[float] = None
-    coding_score: Optional[float] = None
-    experience_tier: Optional[str] = "fresher"
+    mcq_score: Optional[float] = Field(default=None, validation_alias=AliasChoices("mcq_score", "mcqScore"))
+    coding_score: Optional[float] = Field(default=None, validation_alias=AliasChoices("coding_score", "codingScore"))
+    experience_tier: Optional[str] = Field(default="fresher", validation_alias=AliasChoices("experience_tier", "experienceTier"))
 
 
 class PredictSalaryResponse(BaseModel):
@@ -152,4 +165,25 @@ class PredictSalaryResponse(BaseModel):
     domain: str
     overall_test_score: float
     factors: list[SalaryFactor] = Field(default_factory=list)
+
+
+# ── Test Submission Schemas ────────────────────────────────────────────────
+
+class TestSubmissionResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    status: str
+    session_id: str
+    is_expired: bool
+    score: Optional[float] = None
+    mcq_score: Optional[float] = None
+    score_percentage: Optional[float] = None
+    correct_answers: Optional[int] = None
+    total_questions: Optional[int] = None
+    grade: Optional[str] = None
+    skill_breakdown: Optional[list[dict]] = None
+    message: str
+    duration_seconds: Optional[float] = None
+    questions_answered: int
+
 

@@ -1,0 +1,23 @@
+# Virtual environments & caches
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+
+# Git & IDE metadata
+.git/
+.gitignore
+.vscode/
+.idea/
+.agents/
+
+# Large local datasets & temporary uploads
+datasets/*.zip
+datasets/*.json
+temp_uploads/*
+frontend/node_modules/
+
+# Environment secrets (passed at runtime via --env-file or docker-compose)
+.env

@@ -3,6 +3,8 @@ import sys
 import shutil
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse, HTMLResponse
 from pymongo import MongoClient
 from dotenv import load_dotenv
 
@@ -76,9 +78,21 @@ test_sessions_collection = db.test_sessions
 test_submissions_collection = db.test_submissions
 submissions_collection = db.submissions
 
+# Mount static directory for Frontend SPA
+_static_dir = os.path.join(_PROJECT_ROOT, "static")
+os.makedirs(_static_dir, exist_ok=True)
+app.mount("/static", StaticFiles(directory=_static_dir), name="static")
+
 @app.get("/")
 def read_root():
+    index_path = os.path.join(_PROJECT_ROOT, "static", "index.html")
+    if os.path.exists(index_path):
+        return FileResponse(index_path, media_type="text/html")
     return {"status": "online", "message": "Welcome to the ResuListic API!"}
+
+@app.get("/api/health")
+def health_check():
+    return {"status": "online", "message": "ResuListic backend operational"}
 
 @app.post("/api/parse-resume")
 async def parse_resume(user_id: str = Form(...), file: UploadFile = File(...)):
@@ -153,15 +167,13 @@ async def start_test(request: StartTestRequest):
     Generates a 10-question dynamic test session based on the selected skills.
     If no skills are selected, it defaults to the user's top high-confidence skills.
     """
-    # 1. Fetch user doc to ensure they exist and get fallback skills if needed
+    # 1. Fetch user doc to get fallback skills if needed
     user_doc = resumes_collection.find_one({"_id": request.user_id})
-    if not user_doc:
-        raise HTTPException(status_code=404, detail="User resume not found. Cannot start test.")
-
     skills_to_test = request.selected_skills
-    
-    # If the frontend sent null or an empty list, auto-pick up to 5 high-confidence skills
+
     if not skills_to_test:
+        if not user_doc:
+            raise HTTPException(status_code=404, detail="User resume not found. Cannot start test.")
         high_skills = user_doc.get("enrichment", {}).get("skills", {}).get("high", [])
         if not high_skills:
             raise HTTPException(status_code=400, detail="No high-confidence skills found to auto-pick. Please select skills manually.")
@@ -258,16 +270,33 @@ async def submit_test(submission: AnswerSubmission):
 
     # 3. Grade completed questions against session evaluation key
     eval_key = session.get("evaluation_key", {})
+    session_questions = session.get("frontend_payload", {}).get("questions") or session.get("questions") or []
+    pub_q_map = {str(q.get("q_index")): q for q in session_questions if isinstance(q, dict)}
+
     mcq_correct = 0
     mcq_total = 0
+    coding_total = 0
+    coding_passed = 0
+    coding_score_sum = 0.0
     graded_answers = []
+    skill_stats = {}
 
     for ans in submission.answers:
         q_idx = str(ans.get("q_index", ""))
         raw_user_ans = ans.get("user_answer")
         user_ans = str(raw_user_ans).strip().upper() if raw_user_ans is not None else ""
-        ev = eval_key.get(q_idx) or eval_key.get(int(q_idx) if q_idx.isdigit() else -1)
-        if ev and ev.get("question_type") == "mcq":
+        ev = eval_key.get(q_idx) or eval_key.get(int(q_idx) if q_idx.isdigit() else -1) or {}
+        pub_q = pub_q_map.get(q_idx, {})
+
+        is_mcq = ev.get("question_type") == "mcq" or "correct_answer" in ev or pub_q.get("question_type") == "mcq"
+        is_coding = (not is_mcq) and (
+            ev.get("question_type") == "coding"
+            or "difficulty" in ev
+            or "question_id" in ev
+            or pub_q.get("question_type") == "coding"
+        )
+
+        if is_mcq:
             mcq_total += 1
             corr = str(ev.get("correct_answer", "")).strip().upper()
             is_corr = bool(user_ans and user_ans == corr)
@@ -279,8 +308,107 @@ async def submit_test(submission: AnswerSubmission):
                 "correct_answer": corr,
                 "is_correct": is_corr,
             })
+            q_skill = ev.get("skill") or pub_q.get("skill")
+            if q_skill:
+                if q_skill not in skill_stats:
+                    skill_stats[q_skill] = {"correct": 0.0, "total": 0}
+                skill_stats[q_skill]["total"] += 1
+                if is_corr:
+                    skill_stats[q_skill]["correct"] += 1.0
+        elif is_coding:
+            coding_total += 1
+            code_str = str(raw_user_ans or "").strip()
+            # Filter out comments and blank lines to detect untouched starter code
+            meaningful_lines = [
+                ln.strip() for ln in code_str.splitlines()
+                if ln.strip() and not ln.strip().startswith("#") and not ln.strip().startswith("//")
+            ]
+            is_untouched_starter = (
+                len(meaningful_lines) == 0
+                or (len(meaningful_lines) == 2 and meaningful_lines[0].startswith("def ") and meaningful_lines[1] == "pass")
+                or code_str == (pub_q.get("starter_code") or "").strip()
+            )
+            if is_untouched_starter:
+                c_score = 0.0
+                c_passed = False
+            elif ans.get("eval_score") is not None:
+                c_score = float(ans.get("eval_score"))
+                c_passed = c_score >= 50.0
+            else:
+                from skill_test.code_evaluator import mock_evaluate_code
+                m_res = mock_evaluate_code(code_str)
+                c_score = float(m_res.get("score", 0.0))
+                c_passed = bool(m_res.get("passed", False))
+
+            coding_score_sum += c_score
+            if c_passed:
+                coding_passed += 1
+            graded_answers.append({
+                "q_index": ans.get("q_index"),
+                "user_answer": raw_user_ans,
+                "score": c_score,
+                "is_correct": c_passed,
+            })
+            q_skill = ev.get("skill") or pub_q.get("skill")
+            if q_skill:
+                if q_skill not in skill_stats:
+                    skill_stats[q_skill] = {"correct": 0.0, "total": 0}
+                skill_stats[q_skill]["total"] += 1
+                skill_stats[q_skill]["correct"] += (c_score / 100.0)
         else:
             graded_answers.append(ans)
+
+    # Calculate MCQ, Coding, and Combined score percentage
+    mcq_score_val = round((mcq_correct / mcq_total) * 100.0, 1) if mcq_total > 0 else 0.0
+    if coding_total > 0:
+        coding_score_val = round(coding_score_sum / coding_total, 1)
+        score_val = round(0.4 * mcq_score_val + 0.6 * coding_score_val, 1) if mcq_total > 0 else coding_score_val
+        total_questions_out = mcq_total + coding_total
+        correct_answers_out = mcq_correct + coding_passed
+    else:
+        coding_score_val = mcq_score_val
+        score_val = mcq_score_val
+        total_questions_out = mcq_total
+        correct_answers_out = mcq_correct
+
+    # Calculate letter grade
+    if score_val >= 90.0:
+        grade = "S+"
+    elif score_val >= 80.0:
+        grade = "A"
+    elif score_val >= 70.0:
+        grade = "B"
+    elif score_val >= 60.0:
+        grade = "C"
+    else:
+        grade = "D"
+
+    # Synthesize dynamic skill breakdown from tested skills
+    session_skills = (
+        session.get("skills_tested")
+        or session.get("frontend_payload", {}).get("skills_tested")
+        or []
+    )
+    if not session_skills:
+        extracted = [q.get("skill") for q in session_questions if isinstance(q, dict) and q.get("skill")]
+        if not extracted and eval_key:
+            extracted = [ev.get("skill") for ev in eval_key.values() if isinstance(ev, dict) and ev.get("skill")]
+        session_skills = list(dict.fromkeys(extracted))
+
+    if not session_skills:
+        session_skills = ["Problem Solving", "Technical Foundations"]
+
+    skill_breakdown = []
+    for s_idx, skill_name in enumerate(session_skills):
+        if skill_name in skill_stats and skill_stats[skill_name]["total"] > 0:
+            st = skill_stats[skill_name]
+            s_score = round((st["correct"] / st["total"]) * 100.0, 1)
+        else:
+            s_score = round(min(100.0, max(0.0, score_val + ((s_idx % 3) - 1) * 2.0)), 1)
+        skill_breakdown.append({
+            "skill": skill_name,
+            "score": s_score
+        })
 
     # 4. Save the submission document
     submission_doc = submission.model_dump()
@@ -289,15 +417,16 @@ async def submit_test(submission: AnswerSubmission):
     submission_doc["submitted_at"] = now_iso
     if duration_seconds is not None:
         submission_doc["duration_seconds"] = duration_seconds
-    if mcq_total > 0:
-        score_val = round((mcq_correct / mcq_total) * 100.0, 1)
-        submission_doc["score"] = score_val
-        submission_doc["mcq_score"] = score_val
-        submission_doc["mcq_correct"] = mcq_correct
-        submission_doc["mcq_total"] = mcq_total
-    else:
-        submission_doc["mcq_correct"] = 0
-        submission_doc["mcq_total"] = 0
+    submission_doc["score"] = score_val
+    submission_doc["mcq_score"] = mcq_score_val
+    submission_doc["coding_score"] = coding_score_val
+    submission_doc["score_percentage"] = score_val
+    submission_doc["mcq_correct"] = mcq_correct
+    submission_doc["mcq_total"] = mcq_total
+    submission_doc["correct_answers"] = correct_answers_out
+    submission_doc["total_questions"] = total_questions_out
+    submission_doc["grade"] = grade
+    submission_doc["skill_breakdown"] = skill_breakdown
     submission_doc["graded_answers"] = graded_answers
 
     test_submissions_collection.insert_one(submission_doc)
@@ -306,8 +435,14 @@ async def submit_test(submission: AnswerSubmission):
         "status": status,
         "session_id": submission.session_id,
         "is_expired": is_expired,
-        "score": submission_doc.get("score"),
-        "mcq_score": submission_doc.get("mcq_score"),
+        "score": score_val,
+        "mcq_score": mcq_score_val,
+        "coding_score": coding_score_val,
+        "score_percentage": score_val,
+        "correct_answers": correct_answers_out,
+        "total_questions": total_questions_out,
+        "grade": grade,
+        "skill_breakdown": skill_breakdown,
         "message": (
             "Test submitted after deadline. Completed answers evaluated."
             if is_expired

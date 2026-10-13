@@ -177,7 +177,18 @@ def build_resume_document(file_path: str, user_id: str) -> dict | None:
     # ── Step 7: Extract Skills ──────────────────────────────────────────────
     skills_raw = _resolve_section(sections, SKILL_SECTION_KEYS)
     projects_raw = _resolve_section(sections, SECTION_MAP["projects"])
+    experience_raw = _resolve_section(sections, SECTION_MAP["experience"])
     skills_extracted = extract_skill(skills_raw, projects_raw)
+
+    total_extracted = len(skills_extracted.get("high", [])) + len(skills_extracted.get("medium", []))
+    if total_extracted < 3:
+        # Fallback for table-based DOCX or OCR images where headings didn't split cleanly
+        secondary_text = "\n".join(filter(None, [projects_raw, experience_raw]))
+        skills_extracted = extract_skill(raw_text, secondary_text if secondary_text else raw_text)
+
+    if not skills_extracted.get("high") and skills_extracted.get("medium"):
+        skills_extracted["high"] = skills_extracted["medium"][:6]
+        skills_extracted["medium"] = skills_extracted["medium"][6:]
 
     # ── Step 8: External Module Calls (Placeholders) ────────────────────────
     # skill_test_result = evaluate_skills(skills_extracted)

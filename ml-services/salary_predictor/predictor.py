@@ -79,35 +79,58 @@ def predict_salary(
     }])
 
     raw_pred = float(model.predict(input_df)[0])
-    predicted_lpa = round(float(np.clip(raw_pred, 4.0, 35.0)), 2)
 
-    # Calculate realistic range
-    min_lpa = round(max(4.0, predicted_lpa - 2.0), 2)
-    max_lpa = round(min(35.0, predicted_lpa + 3.0), 2)
+    # ── Merit-First Calibration & Starting 25%ile Guardrail (< 10 LPA) ─────
+    # Skill test score carries 80%+ weight; resume skills only unlock proportionally to test score
+    verification_gate = max(0.0, (total_score - 45.0) / 55.0) ** 1.5
+    if total_score <= 55.0:
+        # Starting 25%ile: Strictly < 10 LPA regardless of resume skill count
+        merit_cap = 4.0 + (total_score / 55.0) * 4.2 + min(0.7, hi_count * 0.12)
+        blended = 0.35 * raw_pred + 0.65 * merit_cap
+        predicted_lpa = round(float(np.clip(min(blended, merit_cap), 4.0, 9.2)), 2)
+        min_lpa = round(max(4.0, predicted_lpa - 1.2), 2)
+        max_lpa = round(min(9.8, predicted_lpa + 1.2), 2)
+    elif total_score < 70.0:
+        # 25th - 50th %ile: Moderate test verification
+        merit_anchor = 7.8 + ((total_score - 55.0) / 15.0) * 3.8 + (hi_count * 0.45 * verification_gate)
+        blended = 0.6 * raw_pred + 0.4 * merit_anchor
+        predicted_lpa = round(float(np.clip(blended, 6.5, 13.5)), 2)
+        min_lpa = round(max(4.0, predicted_lpa - 1.5), 2)
+        max_lpa = round(min(35.0, predicted_lpa + 2.0), 2)
+    else:
+        predicted_lpa = round(float(np.clip(raw_pred, 4.0, 35.0)), 2)
+        min_lpa = round(max(4.0, predicted_lpa - 2.0), 2)
+        max_lpa = round(min(35.0, predicted_lpa + 3.0), 2)
 
     # Classify compensation tier
     if predicted_lpa >= 22.0:
         tier_label = "Top-Tier Product / Unicorn Bracket (22 - 35+ LPA)"
     elif predicted_lpa >= 14.0:
         tier_label = "Tier-1 Product & Growth Startup Bracket (14 - 22 LPA)"
-    elif predicted_lpa >= 8.0:
-        tier_label = "Established Tech & Mid-Tier Product Bracket (8 - 14 LPA)"
+    elif predicted_lpa >= 8.5:
+        tier_label = "Established Tech & Mid-Tier Product Bracket (8.5 - 14 LPA)"
     else:
-        tier_label = "Entry-Level / Foundation Bracket (4 - 8 LPA)"
+        tier_label = "Entry-Level / Foundation Bracket (4 - 8.5 LPA)"
 
-    # Identify primary salary drivers
+    # Identify primary salary drivers (Skill Test = Primary 80% Driver)
     factors = []
-    if norm_code >= 85.0:
-        factors.append({"factor": f"High Technical Coding Score ({norm_code:.0f}/100)", "impact": "+4.5 to +8.0 LPA"})
-    elif norm_code >= 70.0:
-        factors.append({"factor": f"Solid Coding Competency ({norm_code:.0f}/100)", "impact": "+2.0 to +4.0 LPA"})
+    if total_score >= 85.0:
+        factors.append({"factor": f"Elite Skill Assessment Score ({total_score:.0f}/100 — 80% Weight)", "impact": "+7.5 to +14.0 LPA"})
+    elif total_score >= 70.0:
+        factors.append({"factor": f"Verified Skill Assessment Score ({total_score:.0f}/100 — 80% Weight)", "impact": "+3.5 to +6.5 LPA"})
+    elif total_score > 55.0:
+        factors.append({"factor": f"Moderate Assessment Score ({total_score:.0f}/100 — 80% Weight)", "impact": "+1.5 to +3.0 LPA"})
     else:
-        factors.append({"factor": "Foundation Coding Performance", "impact": "Baseline Bracket"})
+        factors.append({"factor": f"Low Skill Test Score ({total_score:.0f}/100 — Bottom 25%ile)", "impact": "Capped < 10 LPA (Unverified Resume)"})
 
     if hi_count > 0:
         matched_hi = [s for s in skills if s.strip().lower() in HIGH_IMPACT_SKILLS]
         hi_preview = ", ".join(matched_hi[:3])
-        factors.append({"factor": f"High-Demand Skill Premium ({hi_preview})", "impact": f"+{hi_count * 1.3:.1f} LPA"})
+        verified_hi_boost = round(hi_count * 1.25 * verification_gate, 1)
+        if total_score <= 55.0:
+            factors.append({"factor": f"Resume Skills Discounted by Low Test Score ({hi_preview})", "impact": f"+{verified_hi_boost:.1f} LPA (Gated)"})
+        else:
+            factors.append({"factor": f"Test-Verified Skill Premium ({hi_preview})", "impact": f"+{verified_hi_boost:.1f} LPA"})
 
     factors.append({"factor": f"Target Domain Benchmark ({domain})", "impact": "Domain Market Rate"})
 

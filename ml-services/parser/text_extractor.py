@@ -85,12 +85,24 @@ def _handle_pdf(file_path):
             hidden_links = list(dict.fromkeys(hidden_links))
 
         else:
-            
+            pages = []
             try:
                 pages = convert_from_path(file_path, poppler_path=POPPLER_PATH)
             except Exception as e:
-                print(f"[ERROR] converting PDF to image: {e}")
-                return "", []
+                print(f"[WARN] Poppler unavailable ({e}), falling back to PyMuPDF page rendering...")
+                try:
+                    import pymupdf as fitz
+                    from PIL import Image
+                    import io
+                    doc = fitz.open(file_path)
+                    for page in doc:
+                        pix = page.get_pixmap(dpi=200)
+                        img = Image.open(io.BytesIO(pix.tobytes("png")))
+                        pages.append(img)
+                    doc.close()
+                except Exception as fitz_err:
+                    print(f"[ERROR] converting PDF to image: {fitz_err}")
+                    return "", []
 
             for page_number, page_image in enumerate(pages):
                 print(f"Running OCR on page {page_number + 1}...")
