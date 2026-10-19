@@ -15,9 +15,10 @@ load_dotenv()
 
 # Bootstrap project virtualenv site-packages if available
 _PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
-_venv_site = os.path.join(_PROJECT_ROOT, "venv", "Lib", "site-packages")
-if os.path.exists(_venv_site) and _venv_site not in sys.path:
-    sys.path.insert(0, _venv_site)
+if sys.platform.startswith("win"):
+    _venv_site = os.path.join(_PROJECT_ROOT, "venv", "Lib", "site-packages")
+    if os.path.exists(_venv_site) and _venv_site not in sys.path:
+        sys.path.insert(0, _venv_site)
 
 # Ensure the ml-services module is accessible
 sys.path.append(os.path.join(os.path.dirname(__file__), 'ml-services'))
@@ -87,7 +88,15 @@ app.mount("/static", StaticFiles(directory=_static_dir), name="static")
 def read_root():
     index_path = os.path.join(_PROJECT_ROOT, "static", "index.html")
     if os.path.exists(index_path):
-        return FileResponse(index_path, media_type="text/html")
+        return FileResponse(
+            index_path,
+            media_type="text/html",
+            headers={
+                "Cache-Control": "no-cache, no-store, must-revalidate",
+                "Pragma": "no-cache",
+                "Expires": "0",
+            },
+        )
     return {"status": "online", "message": "Welcome to the ResuListic API!"}
 
 @app.get("/api/health")

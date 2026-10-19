@@ -132,17 +132,40 @@ def evaluate_code(
         re.IGNORECASE,
     ))
 
+    def _parse_eval_json(raw_text: str) -> dict:
+        if not raw_text:
+            return {}
+        cleaned = raw_text.strip()
+        if cleaned.startswith("```"):
+            cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned)
+            cleaned = re.sub(r"\s*```$", "", cleaned)
+        try:
+            return json.loads(cleaned)
+        except Exception:
+            m = re.search(r"\{[\s\S]*\}", raw_text)
+            if m:
+                try:
+                    return json.loads(m.group(0))
+                except Exception:
+                    pass
+        return {}
+
     for m in models_to_try:
         for attempt in range(max_retries):
             try:
-                resp = client.chat.completions.create(
-                    model=m,
-                    messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}],
-                    response_format={"type": "json_object"},
-                    temperature=0.1,
-                    max_tokens=600,
-                )
-                data = json.loads(resp.choices[0].message.content or "{}")
+                # First attempt with json_object format, fallback to standard on failure
+                use_json_mode = attempt == 0
+                req_kwargs = {
+                    "model": m,
+                    "messages": [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}],
+                    "temperature": 0.1,
+                    "max_tokens": 600,
+                }
+                if use_json_mode:
+                    req_kwargs["response_format"] = {"type": "json_object"}
+
+                resp = client.chat.completions.create(**req_kwargs)
+                data = _parse_eval_json(resp.choices[0].message.content or "{}")
                 if isinstance(data, list) and data:
                     data = data[0] if isinstance(data[0], dict) else {}
                 elif not isinstance(data, dict):
@@ -164,7 +187,7 @@ def evaluate_code(
             except Exception as e:
                 last_err = e
                 err_str = str(e).lower()
-                is_retryable = isinstance(e, RateLimitError) or "429" in err_str or "rate limit" in err_str or "503" in err_str
+                is_retryable = isinstance(e, RateLimitError) or "429" in err_str or "rate limit" in err_str or "503" in err_str or "json_validate_failed" in err_str
                 if is_retryable:
                     if attempt < max_retries - 1:
                         time.sleep(0.5 * (2 ** attempt))

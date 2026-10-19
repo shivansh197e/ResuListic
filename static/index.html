@@ -3,6 +3,9 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />
   <title>ResuListic | AI Career Intelligence & Timed Assessment Platform</title>
 
   <!-- Google Fonts: Nunito & Poppins -->
@@ -832,6 +835,51 @@
         return /^(explain|describe|define|why|what is|what are|discuss|compare|differentiate|how does)/i.test(title);
       };
 
+      const isQuestionAnswered = (q, idx) => {
+        if (!q) return false;
+        if (q.question_type === 'mcq') {
+          return Boolean(answers[idx]);
+        }
+        const val = codeAnswers[idx] || '';
+        if (isSubjectiveQuestion(q)) {
+          return val.trim().length >= 10;
+        }
+
+        // Coding problem: Filter out comments and whitespace to detect untouched starter template
+        const lines = val.split('\n');
+        const meaningfulLines = lines
+          .map((l) => l.trim())
+          .filter((l) => l && !l.startsWith('#') && !l.startsWith('//'));
+
+        if (meaningfulLines.length === 0) {
+          return false;
+        }
+
+        // Check if candidate left the default starter template unchanged
+        const meaningfulCode = meaningfulLines.join('').replace(/\s+/g, '');
+        if (
+          meaningfulCode === 'defsolution(*args):pass' ||
+          meaningfulCode === 'defsolution():pass' ||
+          meaningfulCode === 'pass'
+        ) {
+          return false;
+        }
+
+        if (q.starter_code) {
+          const starterClean = q.starter_code
+            .split('\n')
+            .map((l) => l.trim())
+            .filter((l) => l && !l.startsWith('#') && !l.startsWith('//'))
+            .join('')
+            .replace(/\s+/g, '');
+          if (meaningfulCode === starterClean) {
+            return false;
+          }
+        }
+
+        return true;
+      };
+
       useEffect(() => {
         const init = async () => {
           const s = await api.startTest(userId, selectedSkills);
@@ -955,6 +1003,109 @@
       const isHardTrack = currentIndex >= 23 || currentQ.difficulty === 'hard';
       const isModTrack = (currentIndex >= 20 && currentIndex < 23) || currentQ.difficulty === 'moderate';
 
+      const formatCodeSnippet = (rawCode) => {
+        let code = (rawCode || '').trim();
+        if (code.includes('\n')) {
+          return code;
+        }
+        // If semicolons exist, split on them
+        if (code.includes(';')) {
+          return code.replace(/;\s*/g, ';\n').trim();
+        }
+        // Split sequential statements glued together with spaces
+        code = code
+          .replace(/([)\]}'"\w])\s+(print\(|console\.log\(|return\b|def\b|class\b|if\b|for\b|while\b|import\b|from\b|let\b|const\b|var\b)/g, '$1\n$2')
+          .replace(/([)\]}'"\w])\s+([a-zA-Z_]\w*\s*=[^=])/g, '$1\n$2')
+          .replace(/([)\]}'"\w])\s+([a-zA-Z_]\w*\.[a-zA-Z_]\w*\()/g, '$1\n$2');
+
+        return code.split('\n').map((l) => l.trim()).filter(Boolean).join('\n');
+      };
+
+      const renderQuestionContent = (rawText) => {
+        if (!rawText) return null;
+        let text = String(rawText).replace(/^\[.*?\]\s*/, '').replace(/^(topic|skill):\s*.*?\n?/i, '').trim();
+        const codeBlockRegex = /```(?:[a-zA-Z0-9_-]+)?\s*([\s\S]*?)```/g;
+        if (!codeBlockRegex.test(text)) {
+          // Check for unbackticked code (e.g. "What is the output of the following code snippet? x = [1, 2, 3]...")
+          const unbacktickedMatch = text.match(/(^(?:.*?(?:code snippet|code|snippet|following program|following script))[:?]\s*)(.+)$/i);
+          if (unbacktickedMatch && /[=();{}]/.test(unbacktickedMatch[2]) && !unbacktickedMatch[2].endsWith('?')) {
+            const intro = unbacktickedMatch[1].trim();
+            const body = unbacktickedMatch[2].trim();
+            return (
+              <div className="mt-3">
+                <h3 className="text-lg sm:text-xl font-bold text-slate-800 mt-2 mb-2 font-heading leading-snug">
+                  {intro}
+                </h3>
+                <div className="my-3">
+                  <pre className="bg-slate-900 text-emerald-300 p-4 rounded-2xl font-mono text-xs sm:text-sm overflow-x-auto border border-slate-800 shadow-inner leading-relaxed whitespace-pre font-medium">
+                    <code>{formatCodeSnippet(body)}</code>
+                  </pre>
+                </div>
+              </div>
+            );
+          }
+
+          // Check for inline single backticks `...`
+          if (/`[^`]+`/.test(text)) {
+            const parts = text.split(/(`[^`]+`)/g);
+            return (
+              <h3 className="text-xl font-bold text-slate-800 mt-3 font-heading leading-snug">
+                {parts.map((p, i) => {
+                  if (p.startsWith('`') && p.endsWith('`')) {
+                    return (
+                      <code key={i} className="px-1.5 py-0.5 rounded bg-slate-100 text-sky-800 font-mono text-sm sm:text-base font-semibold border border-slate-200">
+                        {p.slice(1, -1)}
+                      </code>
+                    );
+                  }
+                  return p;
+                })}
+              </h3>
+            );
+          }
+          return <h3 className="text-xl font-bold text-slate-800 mt-3 font-heading leading-snug">{text}</h3>;
+        }
+
+        const segments = [];
+        let lastIdx = 0;
+        let m;
+        let k = 0;
+        const reg = /```(?:[a-zA-Z0-9_-]+)?\s*([\s\S]*?)```/g;
+        while ((m = reg.exec(text)) !== null) {
+          if (m.index > lastIdx) {
+            const before = text.slice(lastIdx, m.index).trim();
+            if (before) {
+              segments.push(
+                <h3 key={`t-${k++}`} className="text-lg sm:text-xl font-bold text-slate-800 mt-2 mb-2 font-heading leading-snug">
+                  {before}
+                </h3>
+              );
+            }
+          }
+          const rawCode = m[1].trim();
+          const codeSnippet = formatCodeSnippet(rawCode);
+          segments.push(
+            <div key={`c-${k++}`} className="my-3">
+              <pre className="bg-slate-900 text-emerald-300 p-4 rounded-2xl font-mono text-xs sm:text-sm overflow-x-auto border border-slate-800 shadow-inner leading-relaxed whitespace-pre font-medium">
+                <code>{codeSnippet}</code>
+              </pre>
+            </div>
+          );
+          lastIdx = reg.lastIndex;
+        }
+        if (lastIdx < text.length) {
+          const after = text.slice(lastIdx).trim();
+          if (after) {
+            segments.push(
+              <p key={`a-${k++}`} className="text-base font-bold text-slate-800 mt-3 mb-1 font-heading">
+                {after}
+              </p>
+            );
+          }
+        }
+        return <div className="mt-3">{segments}</div>;
+      };
+
       return (
         <div className="max-w-4xl mx-auto px-4 py-6">
           {/* HUD Header */}
@@ -989,9 +1140,7 @@
             </div>
             <div className="flex flex-wrap gap-1.5 sm:gap-2">
               {questions.map((q, idx) => {
-                const isAns = q.question_type === 'mcq'
-                  ? Boolean(answers[idx])
-                  : Boolean((codeAnswers[idx] || '').trim().length > 5);
+                const isAns = isQuestionAnswered(q, idx);
                 const isCurr = idx === currentIndex;
                 const isH = idx >= 23 || q.difficulty === 'hard';
                 const isM = (idx >= 20 && idx < 23) || q.difficulty === 'moderate';
@@ -1030,9 +1179,7 @@
                   <>{currentQ.skill ? `${currentQ.skill} • ` : ''}{isHardTrack ? 'Hard (25 Marks)' : 'Moderate (10 Marks)'} • {isSubj ? 'Written Technical Response' : 'Python Challenge'}</>
                 )}
               </span>
-              <h3 className="text-xl font-bold text-slate-800 mt-3 font-heading">
-                {(currentQ.title || currentQ.question || '').replace(/^\[.*?\]\s*/, '').replace(/^(topic|skill):\s*.*?\n?/i, '')}
-              </h3>
+              {renderQuestionContent(currentQ.title || currentQ.question || '')}
               {currentQ.description && (() => {
                 // Strip dangerous tags, render rest as HTML (questions come from MongoDB with raw HTML)
                 const safe = (currentQ.description || '')

@@ -44,18 +44,68 @@ def _parse_llm_mcq_batch(raw_content: str) -> Optional[LLMQuestionBatch]:
     return None
 
 
+def format_code_snippet(code: str) -> str:
+    """Formats code snippets across proper separate lines with clean indentation."""
+    code = code.strip()
+    if '\n' in code:
+        lines = [l.rstrip() for l in code.split('\n')]
+        return '\n'.join(lines)
+
+    # If semicolons exist, split on them
+    if ';' in code:
+        code = re.sub(r';\s*', ';\n', code)
+        return code.strip()
+
+    # Split sequential statements glued together with spaces
+    # 1. Statement keywords: print, return, def, class, if, for, while, import, from, let, const, var, etc.
+    code = re.sub(r'(?<=[)\]}\'\"\w])\s+(print\(|console\.log\(|return\b|def\b|class\b|if\b|for\b|while\b|import\b|from\b|let\b|const\b|var\b)', r'\n\1', code)
+    # 2. Variable assignments e.g. 'y = x' or 'x = [1, 2, 3]'
+    code = re.sub(r'(?<=[)\]}\'\"\w])\s+([a-zA-Z_]\w*\s*=[^=])', r'\n\1', code)
+    # 3. Method calls on identifiers e.g. 'y.append(4)'
+    code = re.sub(r'(?<=[)\]}\'\"\w])\s+([a-zA-Z_]\w*\.[a-zA-Z_]\w*\()', r'\n\1', code)
+
+    lines = [l.strip() for l in code.split('\n') if l.strip()]
+    return '\n'.join(lines)
+
+
+def format_question_code_blocks(text: str) -> str:
+    """Detects and formats code snippets in question text into clean multi-line markdown fences."""
+    pattern = r"```([a-zA-Z0-9_-]*)\s*([\s\S]*?)```"
+    if re.search(pattern, text):
+        def repl(m):
+            lang = m.group(1) or ""
+            snippet = m.group(2) or ""
+            formatted = format_code_snippet(snippet)
+            return f"\n```{lang}\n{formatted}\n```\n"
+        text = re.sub(pattern, repl, text)
+        return re.sub(r"\n{3,}", "\n\n", text).strip()
+
+    # If no backticks, check if there is code after 'code snippet?' or 'code:' etc.
+    code_intro_pattern = r"(^(?:.*?(?:code snippet|code|snippet|following program|following script))[:?]\s*)(.+)$"
+    m = re.match(code_intro_pattern, text, flags=re.IGNORECASE | re.DOTALL)
+    if m:
+        prefix = m.group(1).strip()
+        body = m.group(2).strip()
+        if re.search(r"[=();{}]", body) and not body.endswith("?"):
+            formatted_body = format_code_snippet(body)
+            return f"{prefix}\n\n```\n{formatted_body}\n```"
+
+    return text
+
+
 def _call_groq_mcq_batch(client, model: str, skills_str: str, count: int) -> List[LLMMCQResponse]:
     """Fetches high-quality blind screening MCQs from Groq in a single fast call (~2-3s) respecting 1000 OTPM limit."""
     safe_count = min(count, 5)
     prompt = (
         f"Generate exactly {safe_count} distinct multiple-choice questions evaluating technical aptitude in: [{skills_str}].\n"
-        f"Difficulty: Fundamental / Technical screening. Exactly 4 options each (A, B, C, D).\n"
+        f"Difficulty: Fundamental / Technical screening. Exactly 4 options each.\n"
         f"STRICT BLIND SCREENING RULES:\n"
-        f"1. Do NOT mention, prefix, or leak the skill name, language name, framework name, or topic name in the question text or options (e.g. NEVER write '[Python]', '[FastAPI]', 'In React...', 'Which SQL clause...').\n"
+        f"1. Do NOT mention, prefix, or leak the skill name, language name, framework name, or topic name in the question text or options (e.g. NEVER write '[Python]', '[FastAPI]', 'In React...', 'Which SQL clause...', 'Consider the following C++ code').\n"
         f"2. The candidate must deduce the answer purely from code snippets, technical logic, realistic architectural scenarios, or algorithmic principles.\n"
-        f"3. Return strict JSON with key 'questions' containing exactly {safe_count} question objects.\n"
+        f"3. MULTI-LINE CODE FORMATTING: If including a code snippet in the question, format each programming statement on its OWN SEPARATE LINE inside markdown code fences ``` with clean indentation. Never collapse multiple code statements into a single line.\n"
+        f"4. Return strict JSON with key 'questions' containing exactly {safe_count} question objects.\n"
         f"Each object must have:\n"
-        f"- 'skill' (string category)\n- 'question' (clean question string, NO topic prefixes)\n- 'options' (list of 4 strings prefixed with A), B), C), D))\n"
+        f"- 'skill' (string category)\n- 'question' (clean question string, multi-line code inside ``` fences if applicable, NO topic prefixes)\n- 'options' (list of 4 clean strings WITHOUT letter prefixes like A), B), C), D))\n"
         f"- 'correct_answer' (one of: 'A', 'B', 'C', 'D')\n- 'explanation' (concise 1-sentence rationale)"
     )
     try:
@@ -63,7 +113,7 @@ def _call_groq_mcq_batch(client, model: str, skills_str: str, count: int) -> Lis
             messages=[
                 {
                     "role": "system",
-                    "content": "You are a senior technical interviewer creating blind technical screening MCQs. Never mention or prefix the tested skill name in question text or options. Concise options. Output strict valid JSON only.",
+                    "content": "You are a senior technical interviewer creating blind technical screening MCQs. Never mention or prefix the tested skill name in question text or options. Always format code snippets across separate lines with clean newlines inside ``` markdown blocks. Concise options with no letter prefixes. Output strict valid JSON only.",
                 },
                 {"role": "user", "content": prompt},
             ],
@@ -80,7 +130,11 @@ def _call_groq_mcq_batch(client, model: str, skills_str: str, count: int) -> Lis
                 # Strip any accidental [Skill] or Topic: prefix from question text
                 clean_q_text = re.sub(r"^\[.*?\]\s*", "", q.question).strip()
                 clean_q_text = re.sub(r"^(topic|skill):\s*.*?\n", "", clean_q_text, flags=re.IGNORECASE).strip()
+                # Apply multi-line code formatting
+                clean_q_text = format_question_code_blocks(clean_q_text)
                 q.question = clean_q_text
+                # Strip any leading letter prefixes (e.g. A), B), A., A:) from options
+                q.options = [re.sub(r"^[A-D][).:\s]\s*", "", str(opt)).strip() for opt in q.options]
                 sanitized.append(q)
             return sanitized
     except Exception as e:
@@ -119,64 +173,64 @@ def generate_mcq_questions(skills: List[str], count: int = 20) -> List[dict]:
     # 3. Comprehensive Deterministic Fallback if APIs are unreachable or return < count
     fallback_templates = [
         ("Which data structure provides O(1) average time complexity for both key insertion and lookup?",
-         ["A) Hash Table", "B) Balanced Binary Search Tree", "C) Doubly Linked List", "D) Sorted Dynamic Array"],
+         ["Hash Table", "Balanced Binary Search Tree", "Doubly Linked List", "Sorted Dynamic Array"],
          "A", "Hash tables compute array indices via a hash function, achieving O(1) average lookup and insertion."),
         ("What is the primary motivation for enforcing function purity and immutability in concurrent routines?",
-         ["A) Bypassing compile-time validation", "B) Eliminating race conditions and unintended side effects", "C) Ensuring zero memory allocation overhead", "D) Guaranteeing direct hardware register access"],
+         ["Bypassing compile-time validation", "Eliminating race conditions and unintended side effects", "Ensuring zero memory allocation overhead", "Guaranteeing direct hardware register access"],
          "B", "Pure functions and immutable states prevent shared mutable state, eliminating data races."),
         ("In distributed systems, which strategy is primarily employed to protect upstream services during outages?",
-         ["A) Busy-waiting thread loops", "B) Circuit Breaker with exponential backoff", "C) Continuous synchronous retries without delay", "D) Hardcoded global process timeouts"],
+         ["Busy-waiting thread loops", "Circuit Breaker with exponential backoff", "Continuous synchronous retries without delay", "Hardcoded global process timeouts"],
          "B", "The Circuit Breaker pattern trips on repeated errors, allowing downstream systems to gracefully recover."),
         ("Which HTTP status code is most appropriate when a client request violates input validation constraints?",
-         ["A) 400 Bad Request / 422 Unprocessable Content", "B) 500 Internal Server Error", "C) 304 Not Modified", "D) 204 No Content"],
+         ["400 Bad Request / 422 Unprocessable Content", "500 Internal Server Error", "304 Not Modified", "204 No Content"],
          "A", "400/422 explicitly indicates malformed syntax or unprocessable semantic validation errors on client input."),
         ("What is the worst-case time complexity of searching for an element in an unbalanced Binary Search Tree?",
-         ["A) O(1)", "B) O(log N)", "C) O(N)", "D) O(N log N)"],
+         ["O(1)", "O(log N)", "O(N)", "O(N log N)"],
          "C", "An unbalanced BST can degenerate into a linear linked list where searches degrade to O(N)."),
         ("Which isolation level prevents 'Dirty Reads' by ensuring transactions only read committed data?",
-         ["A) Read Uncommitted", "B) Read Committed", "C) Serializable", "D) Repeatable Read"],
+         ["Read Uncommitted", "Read Committed", "Serializable", "Repeatable Read"],
          "B", "Read Committed guarantees that transactions will never view uncommitted, in-flight dirty writes."),
         ("When scaling write-heavy database workloads, which architectural pattern is standard practice?",
-         ["A) Write-Ahead Logging with read replicas / sharding", "B) Monolithic table locking without indices", "C) Synchronous polling of flat log files", "D) Storing all state in ephemeral client cookies"],
+         ["Write-Ahead Logging with read replicas / sharding", "Monolithic table locking without indices", "Synchronous polling of flat log files", "Storing all state in ephemeral client cookies"],
          "A", "Sharding, partitioned tables, and WAL-backed read replicas distribute heavy database load effectively."),
         ("What is the purpose of an idempotent HTTP endpoint in RESTful API design?",
-         ["A) Executing only on secure SSL connections", "B) Producing identical server state upon multiple identical requests", "C) Bypassing cross-origin security policies", "D) Guaranteeing sub-millisecond execution times"],
+         ["Executing only on secure SSL connections", "Producing identical server state upon multiple identical requests", "Bypassing cross-origin security policies", "Guaranteeing sub-millisecond execution times"],
          "B", "Idempotence ensures subsequent identical requests (e.g. PUT/DELETE) have the same effect as a single request."),
         ("Which algorithmic technique solves problems by combining optimal solutions of overlapping subproblems?",
-         ["A) Greedy Choice Method", "B) Dynamic Programming (Memoization / Tabulation)", "C) Simple Randomized Exploration", "D) Linear Brute Force Search"],
+         ["Greedy Choice Method", "Dynamic Programming (Memoization / Tabulation)", "Simple Randomized Exploration", "Linear Brute Force Search"],
          "B", "Dynamic Programming caches overlapping subproblem results to prevent redundant exponential recalculation."),
         ("In asynchronous programming, what occurs if an unawaited background task encounters an unhandled exception?",
-         ["A) Immediate kernel panic", "B) Silent task termination or unhandled exception warning depending on runtime", "C) Automatic rollback of physical storage", "D) Automatic conversion to synchronous blocking execution"],
+         ["Immediate kernel panic", "Silent task termination or unhandled exception warning depending on runtime", "Automatic rollback of physical storage", "Automatic conversion to synchronous blocking execution"],
          "B", "Unhandled exceptions in unawaited tasks often lead to dropped tasks, swallowed errors, or process warnings."),
         ("Which index type is best suited for range-based queries (e.g. BETWEEN or >=) on relational tables?",
-         ["A) Hash Index", "B) B-Tree Index", "C) Full-text Inverted Index", "D) Spatial R-Tree Index"],
+         ["Hash Index", "B-Tree Index", "Full-text Inverted Index", "Spatial R-Tree Index"],
          "B", "B-Tree indices maintain sorted key structures, making range scans and inequalities highly efficient."),
         ("What is the primary benefit of connection pooling in database client architectures?",
-         ["A) Eliminating query optimization overhead", "B) Reusing existing open network sockets, avoiding TCP/handshake latency", "C) Encrypting disk sectors automatically", "D) Removing the need for SQL transactions"],
+         ["Eliminating query optimization overhead", "Reusing existing open network sockets, avoiding TCP/handshake latency", "Encrypting disk sectors automatically", "Removing the need for SQL transactions"],
          "B", "Connection pooling reuses established TCP connections, eliminating the high cost of per-query handshakes."),
         ("In modern API authentication, how are stateless user sessions typically validated across distributed clusters?",
-         ["A) Cryptographically signed JWT tokens", "B) Sticky IP routing without tokens", "C) Storing plaintext credentials in shared files", "D) Querying local operating system user accounts"],
+         ["Cryptographically signed JWT tokens", "Sticky IP routing without tokens", "Storing plaintext credentials in shared files", "Querying local operating system user accounts"],
          "A", "Digitally signed tokens allow microservices to verify authenticity independently without central session state."),
         ("Which caching eviction policy removes the item that has not been accessed for the longest duration?",
-         ["A) FIFO (First In First Out)", "B) LFU (Least Frequently Used)", "C) LRU (Least Recently Used)", "D) Random Eviction"],
+         ["FIFO (First In First Out)", "LFU (Least Frequently Used)", "LRU (Least Recently Used)", "Random Eviction"],
          "C", "LRU tracks access order and evicts items with the stalest access timestamps when capacity is reached."),
         ("What does the 'Single Responsibility Principle' dictate in object-oriented and modular system design?",
-         ["A) A class or module should have only one reason to change", "B) Every file must contain only a single function", "C) Code must run strictly on a single thread", "D) Applications must only interact with a single database table"],
+         ["A class or module should have only one reason to change", "Every file must contain only a single function", "Code must run strictly on a single thread", "Applications must only interact with a single database table"],
          "A", "SRP mandates that each module or class encapsulated a single, cohesive responsibility or actor concern."),
         ("When implementing rate limiting for public web services, which algorithm accommodates brief bursts of traffic smoothly?",
-         ["A) Fixed Window Counter", "B) Token Bucket / Leaky Bucket", "C) Unchecked Round Robin", "D) Strict Single-Thread Queue"],
+         ["Fixed Window Counter", "Token Bucket / Leaky Bucket", "Unchecked Round Robin", "Strict Single-Thread Queue"],
          "B", "Token Bucket allows temporary bursts up to bucket capacity while enforcing a steady long-term replenishment rate."),
         ("Why are prepared statements parameterized queries recommended for relational database execution?",
-         ["A) They prevent SQL injection attacks and enable query execution plan reuse", "B) They convert SQL directly to assembly language", "C) They eliminate disk I/O operations", "D) They make database transactions non-blocking"],
+         ["They prevent SQL injection attacks and enable query execution plan reuse", "They convert SQL directly to assembly language", "They eliminate disk I/O operations", "They make database transactions non-blocking"],
          "A", "Parameterized queries separate SQL structure from user data, preventing injection and speeding up query plans."),
         ("What is the primary tradeoff of implementing microservices over a monolithic architecture?",
-         ["A) Decreased network latency and zero deployment overhead", "B) Increased distributed complexity, network boundaries, and operational observability overhead", "C) Complete removal of data serialization", "D) Inability to scale independent services"],
+         ["Decreased network latency and zero deployment overhead", "Increased distributed complexity, network boundaries, and operational observability overhead", "Complete removal of data serialization", "Inability to scale independent services"],
          "B", "Microservices offer independent scalability at the cost of distributed networking, data consistency, and operational overhead."),
         ("In memory management, what is a primary cause of memory leaks in garbage-collected environments?",
-         ["A) Creating large local primitive variables inside functions", "B) Retaining unintended long-lived references to unused objects in global structures or listeners", "C) Utilizing compiler optimizations", "D) Declaring read-only constant variables"],
+         ["Creating large local primitive variables inside functions", "Retaining unintended long-lived references to unused objects in global structures or listeners", "Utilizing compiler optimizations", "Declaring read-only constant variables"],
          "B", "Garbage collectors cannot reclaim objects that are still reachable through global caches, unremoved event listeners, or static maps."),
         ("Which transport protocol provides connection-oriented, ordered, and guaranteed delivery of byte streams?",
-         ["A) UDP", "B) TCP", "C) ICMP", "D) ARP"],
+         ["UDP", "TCP", "ICMP", "ARP"],
          "B", "TCP guarantees ordered, reliable packet delivery with flow control and error checking."),
     ]
 
@@ -205,8 +259,8 @@ def generate_mcq_questions(skills: List[str], count: int = 20) -> List[dict]:
                 "difficulty": "easy",
                 "source": "ai_generated",
                 "question_type": "mcq",
-                "question": q.question,
-                "options": q.options,
+                "question": format_question_code_blocks(q.question),
+                "options": [re.sub(r"^[A-D][).:\s]\s*", "", str(o)).strip() for o in q.options],
                 "marks": 1,
             },
             "evaluation_data": {

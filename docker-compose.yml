@@ -6,6 +6,11 @@ services:
     container_name: resulistic-app
     ports:
       - "8000:8000"
+    volumes:
+      - ./static:/app/static
+      - ./main.py:/app/main.py
+      - ./ml-services:/app/ml-services
+      - ./frontend:/app/frontend
     env_file:
       - .env
     restart: unless-stopped

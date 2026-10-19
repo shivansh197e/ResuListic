@@ -217,24 +217,67 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
-# test resume
+# test resume and candidate documents
 ml-services/data/test_resumes/
 
-# Ignore all resume document formats globally
+# Ignore candidate resume documents and PDFs globally
 *.pdf
 *.docx
-# Environment / secret files
+
+# Environment / Secret files
 *.env
 .env
 .env.*
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
 !.env.example
+*.pem
+*.key
+*.cert
+*.crt
+secrets.toml
+credentials.json
+
+# Binaries, Executables & Tunnel Tools
+*.exe
+*.dll
+*.dylib
+*.bin
+cloudflared
+cloudflared.exe
+.cloudflared/
+
+# IDE & Editor Configurations
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Operating System Files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
 
 # Antigravity / AI Agent configurations
 .agents/
+.gemini/
+.claude/
 
 # Temporary uploads and ephemeral runtime files
 temp_uploads/*
 !temp_uploads/.gitkeep
+temp_crop*.png
+*.tmp
+*.temp
 
 # Heavy external raw dataset dumps (keep repo lightweight)
 datasets/job prediction dataset/
@@ -243,5 +286,15 @@ datasets/leetcode_problems.json
 
 # Local logs and debug outputs
 *.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Node / Frontend dependencies & build artifacts
 node_modules/
+frontend/node_modules/
+frontend/dist/
+frontend/build/
+.eslintcache
+
 
