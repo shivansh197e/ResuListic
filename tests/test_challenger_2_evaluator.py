@@ -327,9 +327,9 @@ class TestChallenger2Evaluator(unittest.TestCase):
             self.assertEqual(saved_doc["passed"], p["expected_passed"])
             self.assertEqual(saved_doc["score"], p["expected_score"])
 
-    # =========================================================================
+
     # PART 3: FastAPI POST /api/evaluate End-to-End Integration via TestClient
-    # =========================================================================
+
 
     def test_08_fastapi_evaluate_moderate_question_success(self):
         """End-to-end evaluation of moderate question via POST /api/evaluate."""

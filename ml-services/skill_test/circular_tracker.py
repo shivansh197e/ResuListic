@@ -10,12 +10,21 @@ from pymongo.database import Database
 HARD_POOL_SIZE = 50  # ponytail: bump if 25 unique tests per skill isn't enough
 
 
+VALID_DESC_FILTER = {
+    "description": {"$exists": True, "$ne": None, "$nin": ["", "Rewritten:", "Rewritten: "], "$regex": r"(?s).{100,}"}
+}
+
+
 def get_hard_questions(db: Database, user_id: str, skill: str, count: int = 2) -> list[dict]:
-    """Fetch `count` consecutive hard questions using circular pointer logic."""
-    total_hard = db.questions_hard.count_documents({"skill": skill})
+    """Fetch `count` consecutive hard questions with valid full descriptions using circular pointer logic."""
+    skill_query = {"skill": skill, **VALID_DESC_FILTER}
+    total_hard = db.questions_hard.count_documents(skill_query)
     if total_hard == 0:
-        # Fallback to general pool if no hard questions for this exact skill
-        return list(db.questions_hard.aggregate([{"$sample": {"size": count}}]))
+        # Fallback to general pool of valid questions
+        return list(db.questions_hard.aggregate([
+            {"$match": VALID_DESC_FILTER},
+            {"$sample": {"size": count}}
+        ]))
 
     pool_size = total_hard
     state_key = {"user_id": user_id, "skill": skill}
@@ -42,18 +51,18 @@ def get_hard_questions(db: Database, user_id: str, skill: str, count: int = 2) -
     fetch_count = min(count, pool_size)
     indices = [(pointer + i) % pool_size for i in range(fetch_count)]
 
-    questions = list(db.questions_hard.find({"skill": skill, "index": {"$in": indices}}))
+    questions = list(db.questions_hard.find({"skill": skill, "index": {"$in": indices}, **VALID_DESC_FILTER}))
 
     # Re-sort to match circular order (MongoDB doesn't guarantee $in order)
     index_order = {idx: pos for pos, idx in enumerate(indices)}
     questions.sort(key=lambda q: index_order.get(q.get("index"), 999))
 
-    # If count requested > pool_size, backfill with random hard questions to fulfill total count
+    # If count requested > pool_size, backfill with random hard questions with valid description
     if len(questions) < count:
         needed = count - len(questions)
         seen_ids = [q["_id"] for q in questions]
         backfill = list(db.questions_hard.aggregate([
-            {"$match": {"_id": {"$nin": seen_ids}}},
+            {"$match": {"_id": {"$nin": seen_ids}, **VALID_DESC_FILTER}},
             {"$sample": {"size": needed}}
         ]))
         questions.extend(backfill)

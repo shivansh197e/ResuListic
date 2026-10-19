@@ -36,5 +36,5 @@ RUN mkdir -p /app/temp_uploads
 
 EXPOSE 8000
 
-# 4. Launch FastAPI server (serves both React SPA at / and API at /api/*)
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+# 4. Launch FastAPI server (uses $PORT injected by Render/Railway/Cloud Run, or defaults to 8000)
+CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}"]

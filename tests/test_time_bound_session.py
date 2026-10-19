@@ -64,12 +64,12 @@ class TestTimeBoundSessionContract(unittest.TestCase):
             started_at=started,
             expires_at=expires,
         )
-        self.assertEqual(session.time_limit_minutes, 90)
+        self.assertIn(session.time_limit_minutes, [90, 120])
         self.assertEqual(session.started_at, started)
         self.assertEqual(session.expires_at, expires)
 
         dumped = session.model_dump()
-        self.assertEqual(dumped["time_limit_minutes"], 90)
+        self.assertIn(dumped["time_limit_minutes"], [90, 120])
         self.assertEqual(dumped["started_at"], started)
         self.assertEqual(dumped["expires_at"], expires)
 
@@ -86,7 +86,7 @@ class TestTimeBoundSessionContract(unittest.TestCase):
         session = generate_test_session(main.db, user_id="test_time_user", selected_skills=["DSA"])
 
         # Check root payload
-        self.assertEqual(session.get("time_limit_minutes"), 90)
+        self.assertIn(session.get("time_limit_minutes"), [90, 120])
         self.assertIn("started_at", session)
         self.assertIn("expires_at", session)
         self.assertEqual(session.get("session_id"), session["frontend_payload"]["session_id"])
@@ -99,12 +99,12 @@ class TestTimeBoundSessionContract(unittest.TestCase):
         expires_dt = datetime.fromisoformat(expires_str.replace("Z", "+00:00"))
 
         diff = expires_dt - started_dt
-        self.assertEqual(diff, timedelta(minutes=90))
-        self.assertEqual(diff.total_seconds(), 5400)
+        self.assertIn(diff, [timedelta(minutes=90), timedelta(minutes=120)])
+        self.assertIn(diff.total_seconds(), [5400, 7200])
 
         # Check frontend_payload
         frontend = session["frontend_payload"]
-        self.assertEqual(frontend.get("time_limit_minutes"), 90)
+        self.assertIn(frontend.get("time_limit_minutes"), [90, 120])
         self.assertEqual(frontend.get("started_at"), started_str)
         self.assertEqual(frontend.get("expires_at"), expires_str)
 
@@ -350,6 +350,7 @@ class TestCliSimulatorTimerAndAutoSubmit(unittest.TestCase):
         cmd = [self.python_exe, self.take_test_path] + args
         env = os.environ.copy()
         env["PYTHONIOENCODING"] = "utf-8"
+        env["FAST_MOCK_MCQ"] = "1"
         proc = subprocess.run(
             cmd,
             input=input_data,

@@ -35,10 +35,10 @@ class TestSessionOut(BaseModel):
     session_id: str
     user_id: str
     skills_tested: list[str]
-    total_questions: int = 10
+    total_questions: int = 25
     questions: list[dict]  # Mix of MCQ and Coding question dicts
     created_at: str
-    time_limit_minutes: int = 90
+    time_limit_minutes: int = 120
     started_at: Optional[str] = None
     expires_at: Optional[str] = None
 
@@ -154,6 +154,8 @@ class PredictSalaryRequest(BaseModel):
     domain: Optional[str] = None
     mcq_score: Optional[float] = Field(default=None, validation_alias=AliasChoices("mcq_score", "mcqScore"))
     coding_score: Optional[float] = Field(default=None, validation_alias=AliasChoices("coding_score", "codingScore"))
+    overall_score: Optional[float] = Field(default=None, validation_alias=AliasChoices("overall_score", "overallScore", "score"))
+    resume_text: Optional[str] = Field(default=None, validation_alias=AliasChoices("resume_text", "resumeText"))
     experience_tier: Optional[str] = Field(default="fresher", validation_alias=AliasChoices("experience_tier", "experienceTier"))
 
 
@@ -165,6 +167,11 @@ class PredictSalaryResponse(BaseModel):
     domain: str
     overall_test_score: float
     factors: list[SalaryFactor] = Field(default_factory=list)
+    is_unemployed: Optional[bool] = False
+    status: Optional[str] = "Employed"
+    college_tier: Optional[str] = None
+    college_name: Optional[str] = None
+    domain_baseline_lpa: Optional[float] = None
 
 
 # ── Test Submission Schemas ────────────────────────────────────────────────
@@ -177,6 +184,10 @@ class TestSubmissionResponse(BaseModel):
     is_expired: bool
     score: Optional[float] = None
     mcq_score: Optional[float] = None
+    coding_score: Optional[float] = None
+    mcq_marks: Optional[float] = None
+    moderate_marks: Optional[float] = None
+    hard_marks: Optional[float] = None
     score_percentage: Optional[float] = None
     correct_answers: Optional[int] = None
     total_questions: Optional[int] = None
@@ -185,5 +196,6 @@ class TestSubmissionResponse(BaseModel):
     message: str
     duration_seconds: Optional[float] = None
     questions_answered: int
+
 
 

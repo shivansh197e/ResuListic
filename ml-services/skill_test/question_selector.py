@@ -89,6 +89,50 @@ def _build_skill_regex(skills: list[str]) -> str:
     return "^(" + "|".join(re.escape(s) for s in skills) + ")$"
 
 
+VALID_DESC_QUERY = {
+    "description": {"$exists": True, "$ne": None, "$nin": ["", "Rewritten:", "Rewritten: "], "$regex": r"(?s).{100,}"}
+}
+
+
+def _clean_title(t: str) -> str:
+    """Removes scraping prefixes like 'Mutated: ' or 'Rewritten: '."""
+    if not t:
+        return "Coding Challenge"
+    return re.sub(r"^(mutated:\s*|rewritten:\s*)", "", t, flags=re.IGNORECASE).strip()
+
+
+def _clean_and_enrich_description(desc: str, title: str) -> str:
+    """Strips artifacts, ensures HTML formatting, and guarantees at least one example and constraints."""
+    cleaned = (desc or "").strip()
+    cleaned = re.sub(r"^rewritten:\s*", "", cleaned, flags=re.IGNORECASE).strip()
+    clean_t = _clean_title(title)
+    if not cleaned or len(cleaned) < 50:
+        cleaned = f"<p>Design and implement an optimal, production-grade algorithm for <strong>{clean_t}</strong>.</p>"
+
+    # Ensure the description has clear structured examples if missing
+    if not re.search(r"\b(example\s*\d*|input\s*:|output\s*:)\b", cleaned, re.IGNORECASE):
+        cleaned += (
+            f"\n\n<p><strong class=\"example\">Example 1:</strong></p>\n"
+            f"<pre>\n<strong>Input:</strong> Valid parameters for {clean_t}\n"
+            f"<strong>Output:</strong> Computed result satisfying problem invariants\n"
+            f"<strong>Explanation:</strong> Implement standard edge-case handling for boundary and extreme inputs.\n</pre>\n"
+            f"<p><strong>Constraints:</strong></p>\n"
+            f"<ul>\n<li>Execution must adhere to optimal time and space complexity standards.</li>\n"
+            f"<li>Return results matching the exact data types and specifications.</li>\n</ul>"
+        )
+    return cleaned
+
+
+def _is_subjective_doc(doc: dict) -> bool:
+    """Detects whether a question is a conceptual/descriptive explanation rather than code."""
+    title = (doc.get("title") or "").strip()
+    desc = (doc.get("description") or "").strip()
+    if re.search(r"^(explain|describe|define|why|what is|what are|discuss|compare|differentiate|how does)\b", title, re.IGNORECASE):
+        if not re.search(r"\b(def |class Solution|public |Input:|Output:|Constraints:|Example 1:|nums)\b", desc):
+            return True
+    return False
+
+
 def _distribute(skills: list[str], total: int) -> dict[str, int]:
     """Distribute `total` questions evenly across skills. Remainder goes to first skills."""
     if not skills:
@@ -97,9 +141,10 @@ def _distribute(skills: list[str], total: int) -> dict[str, int]:
     return {s: base + (1 if i < rem else 0) for i, s in enumerate(skills)}
 
 
-def generate_test_session(db: Database, user_id: str, selected_skills: list[str], time_limit_minutes: int = 90) -> dict:
+def generate_test_session(db: Database, user_id: str, selected_skills: list[str], time_limit_minutes: int = 120) -> dict:
     """
-    Build 10-question test. Returns:
+    Build 25-question test session: 20 MCQs (1 mark each = 20) + 3 Moderate (10 marks each = 30) + 2 Hard (25 marks each = 50) = 100 Marks.
+    Returns:
       {"frontend_payload": dict (no answers), "evaluation_key": dict (secret answers)}
     """
     if not selected_skills:
@@ -111,10 +156,10 @@ def generate_test_session(db: Database, user_id: str, selected_skills: list[str]
 
     all_questions = []
 
-    # Phase 1: 5 easy AI MCQs
-    all_questions.extend(generate_mcq_questions(selected_skills, count=5))
+    # Phase 1: Strictly 20 easy/fundamental AI MCQs (1 mark each)
+    all_questions.extend(generate_mcq_questions(selected_skills, count=20))
 
-    # Phase 2: 3 moderate coding (random via $sample)
+    # Phase 2: 3 moderate coding (random via $sample, 10 marks each)
     moderate_docs = []
     seen_moderate_ids = []
     for skill, count in _distribute(selected_skills, 3).items():
@@ -122,7 +167,7 @@ def generate_test_session(db: Database, user_id: str, selected_skills: list[str]
             continue
         candidates = _expand_skill(skill)
         pattern = _build_skill_regex(candidates)
-        match_query = {"skill": {"$regex": pattern, "$options": "i"}}
+        match_query = {"skill": {"$regex": pattern, "$options": "i"}, **VALID_DESC_QUERY}
         if seen_moderate_ids:
             match_query["_id"] = {"$nin": seen_moderate_ids}
 
@@ -138,22 +183,27 @@ def generate_test_session(db: Database, user_id: str, selected_skills: list[str]
         needed = 3 - len(moderate_docs)
         seen_ids = [d["_id"] for d in moderate_docs]
         backfill = list(db.questions_moderate.aggregate([
-            {"$match": {"_id": {"$nin": seen_ids}}},
+            {"$match": {"_id": {"$nin": seen_ids}, **VALID_DESC_QUERY}},
             {"$sample": {"size": needed}}
         ]))
         moderate_docs.extend(backfill)
 
     for doc in moderate_docs:
+        q_type = "subjective" if _is_subjective_doc(doc) else "coding"
+        clean_t = _clean_title(doc.get("title", "Moderate Coding Problem"))
+        clean_d = _clean_and_enrich_description(doc.get("description", ""), clean_t)
         all_questions.append({
             "public_data": {
                 "question_id": str(doc["_id"]),
                 "skill": doc["skill"], "difficulty": "moderate", "source": "database",
-                "question_type": "coding", "title": doc["title"], "description": doc["description"],
+                "question_type": q_type, "title": clean_t, "description": clean_d,
+                "marks": 10,
             },
             "evaluation_data": {
                 "question_id": str(doc["_id"]),
                 "question_index": doc.get("index"),
                 "difficulty": "moderate",
+                "max_marks": 10.0,
             },
         })
 
@@ -165,14 +215,15 @@ def generate_test_session(db: Database, user_id: str, selected_skills: list[str]
         candidates = _expand_skill(skill)
         pattern = _build_skill_regex(candidates)
 
-        # Check if direct hard questions exist for skill
-        if db.questions_hard.count_documents({"skill": {"$regex": f"^{re.escape(skill)}$", "$options": "i"}}) > 0:
-            direct_match = db.questions_hard.find_one({"skill": {"$regex": f"^{re.escape(skill)}$", "$options": "i"}})
+        # Check if direct hard questions exist for skill with valid descriptions
+        direct_query = {"skill": {"$regex": f"^{re.escape(skill)}$", "$options": "i"}, **VALID_DESC_QUERY}
+        if db.questions_hard.count_documents(direct_query) > 0:
+            direct_match = db.questions_hard.find_one(direct_query)
             canonical_skill = direct_match["skill"] if direct_match and "skill" in direct_match else skill
             hard_docs.extend(get_hard_questions(db, user_id, canonical_skill, count=count))
         else:
             # Route through available subtopics in questions_hard
-            avail = db.questions_hard.distinct("skill", {"skill": {"$regex": pattern, "$options": "i"}})
+            avail = db.questions_hard.distinct("skill", {"skill": {"$regex": pattern, "$options": "i"}, **VALID_DESC_QUERY})
             if avail:
                 sub_counts = _distribute(avail, count)
                 for sub_skill, sub_c in sub_counts.items():
@@ -180,7 +231,7 @@ def generate_test_session(db: Database, user_id: str, selected_skills: list[str]
                         hard_docs.extend(get_hard_questions(db, user_id, sub_skill, count=sub_c))
             else:
                 matched = list(db.questions_hard.aggregate([
-                    {"$match": {"skill": {"$regex": pattern, "$options": "i"}}},
+                    {"$match": {"skill": {"$regex": pattern, "$options": "i"}, **VALID_DESC_QUERY}},
                     {"$sample": {"size": count}}
                 ]))
                 hard_docs.extend(matched)
@@ -190,22 +241,27 @@ def generate_test_session(db: Database, user_id: str, selected_skills: list[str]
         needed = 2 - len(hard_docs)
         seen_ids = [d["_id"] for d in hard_docs]
         backfill = list(db.questions_hard.aggregate([
-            {"$match": {"_id": {"$nin": seen_ids}}},
+            {"$match": {"_id": {"$nin": seen_ids}, **VALID_DESC_QUERY}},
             {"$sample": {"size": needed}}
         ]))
         hard_docs.extend(backfill)
 
     for doc in hard_docs:
+        q_type = "subjective" if _is_subjective_doc(doc) else "coding"
+        clean_t = _clean_title(doc.get("title", "Hard Algorithmic Challenge"))
+        clean_d = _clean_and_enrich_description(doc.get("description", ""), clean_t)
         all_questions.append({
             "public_data": {
                 "question_id": str(doc["_id"]),
                 "skill": doc["skill"], "difficulty": "hard", "source": "database",
-                "question_type": "coding", "title": doc["title"], "description": doc["description"],
+                "question_type": q_type, "title": clean_t, "description": clean_d,
+                "marks": 25,
             },
             "evaluation_data": {
                 "question_id": str(doc["_id"]),
                 "question_index": doc.get("index"),
                 "difficulty": "hard",
+                "max_marks": 25.0,
             },
         })
 

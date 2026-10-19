@@ -275,9 +275,12 @@ async def submit_test(submission: AnswerSubmission):
 
     mcq_correct = 0
     mcq_total = 0
-    coding_total = 0
-    coding_passed = 0
-    coding_score_sum = 0.0
+    mod_total = 0
+    mod_passed = 0
+    mod_score_sum = 0.0
+    hard_total = 0
+    hard_passed = 0
+    hard_score_sum = 0.0
     graded_answers = []
     skill_stats = {}
 
@@ -289,17 +292,13 @@ async def submit_test(submission: AnswerSubmission):
         pub_q = pub_q_map.get(q_idx, {})
 
         is_mcq = ev.get("question_type") == "mcq" or "correct_answer" in ev or pub_q.get("question_type") == "mcq"
-        is_coding = (not is_mcq) and (
-            ev.get("question_type") == "coding"
-            or "difficulty" in ev
-            or "question_id" in ev
-            or pub_q.get("question_type") == "coding"
-        )
+        difficulty = str(ev.get("difficulty") or pub_q.get("difficulty") or "").lower()
 
         if is_mcq:
             mcq_total += 1
             corr = str(ev.get("correct_answer", "")).strip().upper()
             is_corr = bool(user_ans and user_ans == corr)
+            q_marks = 1.0 if is_corr else 0.0
             if is_corr:
                 mcq_correct += 1
             graded_answers.append({
@@ -307,6 +306,9 @@ async def submit_test(submission: AnswerSubmission):
                 "user_answer": raw_user_ans,
                 "correct_answer": corr,
                 "is_correct": is_corr,
+                "marks_obtained": q_marks,
+                "max_marks": 1.0,
+                "difficulty": "easy",
             })
             q_skill = ev.get("skill") or pub_q.get("skill")
             if q_skill:
@@ -315,19 +317,22 @@ async def submit_test(submission: AnswerSubmission):
                 skill_stats[q_skill]["total"] += 1
                 if is_corr:
                     skill_stats[q_skill]["correct"] += 1.0
-        elif is_coding:
-            coding_total += 1
+        else:
             code_str = str(raw_user_ans or "").strip()
+            is_subj = pub_q.get("question_type") in ("subjective", "text")
             # Filter out comments and blank lines to detect untouched starter code
             meaningful_lines = [
                 ln.strip() for ln in code_str.splitlines()
                 if ln.strip() and not ln.strip().startswith("#") and not ln.strip().startswith("//")
             ]
-            is_untouched_starter = (
-                len(meaningful_lines) == 0
-                or (len(meaningful_lines) == 2 and meaningful_lines[0].startswith("def ") and meaningful_lines[1] == "pass")
-                or code_str == (pub_q.get("starter_code") or "").strip()
-            )
+            if is_subj:
+                is_untouched_starter = len(code_str) < 5
+            else:
+                is_untouched_starter = (
+                    len(meaningful_lines) == 0
+                    or (len(meaningful_lines) == 2 and meaningful_lines[0].startswith("def ") and meaningful_lines[1] == "pass")
+                    or code_str == (pub_q.get("starter_code") or "").strip()
+                )
             if is_untouched_starter:
                 c_score = 0.0
                 c_passed = False
@@ -340,13 +345,29 @@ async def submit_test(submission: AnswerSubmission):
                 c_score = float(m_res.get("score", 0.0))
                 c_passed = bool(m_res.get("passed", False))
 
-            coding_score_sum += c_score
-            if c_passed:
-                coding_passed += 1
+            is_hard = difficulty == "hard" or float(ev.get("max_marks", 0.0)) >= 20.0
+            if is_hard:
+                hard_total += 1
+                q_max_marks = 25.0
+                earned_marks = round((c_score / 100.0) * q_max_marks, 2)
+                hard_score_sum += earned_marks
+                if c_passed:
+                    hard_passed += 1
+            else:
+                mod_total += 1
+                q_max_marks = 10.0
+                earned_marks = round((c_score / 100.0) * q_max_marks, 2)
+                mod_score_sum += earned_marks
+                if c_passed:
+                    mod_passed += 1
+
             graded_answers.append({
                 "q_index": ans.get("q_index"),
                 "user_answer": raw_user_ans,
                 "score": c_score,
+                "marks_obtained": earned_marks,
+                "max_marks": q_max_marks,
+                "difficulty": "hard" if is_hard else "moderate",
                 "is_correct": c_passed,
             })
             q_skill = ev.get("skill") or pub_q.get("skill")
@@ -355,19 +376,42 @@ async def submit_test(submission: AnswerSubmission):
                     skill_stats[q_skill] = {"correct": 0.0, "total": 0}
                 skill_stats[q_skill]["total"] += 1
                 skill_stats[q_skill]["correct"] += (c_score / 100.0)
-        else:
-            graded_answers.append(ans)
 
-    # Calculate MCQ, Coding, and Combined score percentage
-    mcq_score_val = round((mcq_correct / mcq_total) * 100.0, 1) if mcq_total > 0 else 0.0
+    # 100-Mark System: MCQs = 20 marks, Moderate = 30 marks, Hard = 50 marks
+    if mcq_total == 20:
+        mcq_marks_val = round(mcq_correct * 1.0, 1)
+    elif mcq_total > 0:
+        mcq_marks_val = round((mcq_correct / mcq_total) * 20.0, 1)
+    else:
+        mcq_marks_val = 0.0
+
+    if mod_total == 3:
+        moderate_marks_val = round(mod_score_sum, 1)
+    elif mod_total > 0:
+        moderate_marks_val = round((mod_score_sum / (mod_total * 10.0)) * 30.0, 1)
+    else:
+        moderate_marks_val = 0.0
+
+    if hard_total == 2:
+        hard_marks_val = round(hard_score_sum, 1)
+    elif hard_total > 0:
+        hard_marks_val = round((hard_score_sum / (hard_total * 25.0)) * 50.0, 1)
+    else:
+        hard_marks_val = 0.0
+
+    coding_total = mod_total + hard_total
+    coding_passed = mod_passed + hard_passed
+
     if coding_total > 0:
-        coding_score_val = round(coding_score_sum / coding_total, 1)
-        score_val = round(0.4 * mcq_score_val + 0.6 * coding_score_val, 1) if mcq_total > 0 else coding_score_val
+        score_val = round(min(100.0, max(0.0, mcq_marks_val + moderate_marks_val + hard_marks_val)), 1)
+        mcq_score_val = round((mcq_correct / mcq_total) * 100.0, 1) if mcq_total > 0 else 0.0
+        coding_score_val = round(((moderate_marks_val + hard_marks_val) / 80.0) * 100.0, 1)
         total_questions_out = mcq_total + coding_total
         correct_answers_out = mcq_correct + coding_passed
     else:
-        coding_score_val = mcq_score_val
+        mcq_score_val = round((mcq_correct / mcq_total) * 100.0, 1) if mcq_total > 0 else 0.0
         score_val = mcq_score_val
+        coding_score_val = 0.0
         total_questions_out = mcq_total
         correct_answers_out = mcq_correct
 
@@ -380,8 +424,12 @@ async def submit_test(submission: AnswerSubmission):
         grade = "B"
     elif score_val >= 60.0:
         grade = "C"
-    else:
+    elif score_val >= 50.0:
         grade = "D"
+    elif score_val >= 40.0:
+        grade = "E"
+    else:
+        grade = "F"
 
     # Synthesize dynamic skill breakdown from tested skills
     session_skills = (
@@ -420,6 +468,9 @@ async def submit_test(submission: AnswerSubmission):
     submission_doc["score"] = score_val
     submission_doc["mcq_score"] = mcq_score_val
     submission_doc["coding_score"] = coding_score_val
+    submission_doc["mcq_marks"] = mcq_marks_val
+    submission_doc["moderate_marks"] = moderate_marks_val
+    submission_doc["hard_marks"] = hard_marks_val
     submission_doc["score_percentage"] = score_val
     submission_doc["mcq_correct"] = mcq_correct
     submission_doc["mcq_total"] = mcq_total
@@ -438,6 +489,9 @@ async def submit_test(submission: AnswerSubmission):
         "score": score_val,
         "mcq_score": mcq_score_val,
         "coding_score": coding_score_val,
+        "mcq_marks": mcq_marks_val,
+        "moderate_marks": moderate_marks_val,
+        "hard_marks": hard_marks_val,
         "score_percentage": score_val,
         "correct_answers": correct_answers_out,
         "total_questions": total_questions_out,
@@ -534,21 +588,41 @@ async def predict_domain_endpoint(request: PredictDomainRequest):
 async def predict_salary_endpoint(request: PredictSalaryRequest):
     """
     Evaluates candidate resume skills and assessment performance to predict compensation
-    (ranging from 4 LPA to 30+ LPA) with confidence range and salary breakdown factors.
+    (ranging from 3.0 LPA to 30.0 LPA, or Unemployed) with college tier detection and factors.
     """
     try:
-        # Case A: user_id provided without direct skills -> resolve from MongoDB
-        if request.user_id and not request.skills and request.mcq_score is None and request.coding_score is None:
+        resume_text = request.resume_text
+        target_skills = list(request.skills) if request.skills else []
+
+        # If user_id provided and resume_text / skills are missing, resolve from MongoDB
+        if request.user_id and db is not None:
+            user_doc = db.resumes.find_one({"_id": request.user_id})
+            if user_doc:
+                if not resume_text:
+                    edu_text = user_doc.get("sections", {}).get("education", "")
+                    raw_text = user_doc.get("raw_text", "")
+                    resume_text = f"{edu_text}\n{raw_text[:2000]}"
+                if not target_skills:
+                    enrichment = user_doc.get("enrichment", {})
+                    skills_obj = enrichment.get("skills", {})
+                    high_skills = skills_obj.get("high", [])
+                    med_skills = skills_obj.get("medium", [])
+                    target_skills = list(dict.fromkeys(high_skills + med_skills))
+
+        # Case A: user_id provided without direct skills or scores -> resolve from MongoDB
+        if request.user_id and not target_skills and request.mcq_score is None and request.coding_score is None and request.overall_score is None:
             res = predict_salary_for_user(db, request.user_id)
             res["user_id"] = request.user_id
             return PredictSalaryResponse(**res)
 
-        # Case B: Direct skills / test scores passed in payload
+        # Case B: Direct skills / test scores passed in payload (with DB resume enrichment)
         res = predict_salary(
-            skills=request.skills or [],
+            skills=target_skills,
             domain=request.domain,
             mcq_score=request.mcq_score,
             coding_score=request.coding_score,
+            overall_score=request.overall_score,
+            resume_text=resume_text,
             experience_tier=request.experience_tier or "fresher",
         )
         res["user_id"] = request.user_id

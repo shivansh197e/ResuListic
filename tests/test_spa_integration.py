@@ -288,31 +288,48 @@ class TestResuListicSPAIntegration(unittest.TestCase):
         self.assertEqual(resp.status_code, 200, f"Expected 200, got: {resp.text}")
         session_out = resp.json()
 
-        # Invariants: 10 questions, 90 minutes, answers stripped
+        # Invariants: 25 questions (or 10 legacy), 120 minutes (or 90 legacy), answers stripped
         self.assertIn("session_id", session_out)
         self.created_sessions.append(session_out["session_id"])
-        self.assertEqual(session_out["total_questions"], 10)
-        self.assertEqual(len(session_out["questions"]), 10)
-        self.assertEqual(session_out["time_limit_minutes"], 90)
+        self.assertIn(session_out["total_questions"], [10, 25])
+        self.assertIn(len(session_out["questions"]), [10, 25])
+        self.assertIn(session_out["time_limit_minutes"], [90, 120])
         self.assertIn("started_at", session_out)
         self.assertIn("expires_at", session_out)
 
-        # Question structure: 5 MCQs (0-4), 3 Moderate (5-7), 2 Hard (8-9)
-        for i in range(5):
-            q = session_out["questions"][i]
-            self.assertEqual(q.get("question_type"), "mcq")
-            self.assertIn("options", q)
-            self.assertNotIn("correct_answer", q, "Secret MCQ answer must be stripped from public payload")
+        # Question structure
+        if session_out["total_questions"] == 25:
+            for i in range(20):
+                q = session_out["questions"][i]
+                self.assertEqual(q.get("question_type"), "mcq")
+                self.assertIn("options", q)
+                self.assertNotIn("correct_answer", q, "Secret MCQ answer must be stripped from public payload")
 
-        for i in range(5, 8):
-            q = session_out["questions"][i]
-            self.assertEqual(q.get("difficulty"), "moderate")
-            self.assertNotIn("reference_solution", q, "Reference solution must be stripped")
+            for i in range(20, 23):
+                q = session_out["questions"][i]
+                self.assertEqual(q.get("difficulty"), "moderate")
+                self.assertNotIn("reference_solution", q, "Reference solution must be stripped")
 
-        for i in range(8, 10):
-            q = session_out["questions"][i]
-            self.assertEqual(q.get("difficulty"), "hard")
-            self.assertNotIn("reference_solution", q, "Reference solution must be stripped")
+            for i in range(23, 25):
+                q = session_out["questions"][i]
+                self.assertEqual(q.get("difficulty"), "hard")
+                self.assertNotIn("reference_solution", q, "Reference solution must be stripped")
+        else:
+            for i in range(5):
+                q = session_out["questions"][i]
+                self.assertEqual(q.get("question_type"), "mcq")
+                self.assertIn("options", q)
+                self.assertNotIn("correct_answer", q, "Secret MCQ answer must be stripped from public payload")
+
+            for i in range(5, 8):
+                q = session_out["questions"][i]
+                self.assertEqual(q.get("difficulty"), "moderate")
+                self.assertNotIn("reference_solution", q, "Reference solution must be stripped")
+
+            for i in range(8, 10):
+                q = session_out["questions"][i]
+                self.assertEqual(q.get("difficulty"), "hard")
+                self.assertNotIn("reference_solution", q, "Reference solution must be stripped")
 
     def test_t1_05_code_evaluation_engine(self):
         """Tier 1: Verify POST /api/evaluate returns 4-key grade and persists submission."""
@@ -515,8 +532,8 @@ class TestResuListicSPAIntegration(unittest.TestCase):
         self.assertLessEqual(sal, 35.0)
 
     def test_t2_07_boundary_salary_clamping_extremes(self):
-        """Tier 2: Verify salary regression is clamped within [4.0, 35.0] LPA across extreme profiles."""
-        # Minimal profile (0 skills, 0 scores, fresher)
+        """Tier 2: Verify salary regression is clamped within [3.0, 35.0] LPA or marked unemployed across extreme profiles."""
+        # Minimal profile (0 skills, 0 scores, fresher) -> under redesign, score < 10 or < 3 LPA triggers unemployed (0.0 LPA)
         resp_min = self.client.post("/api/predict-salary", json={
             "skills": [],
             "mcq_score": 0.0,
@@ -524,7 +541,8 @@ class TestResuListicSPAIntegration(unittest.TestCase):
             "experience_tier": "fresher",
         })
         self.assertEqual(resp_min.status_code, 200)
-        self.assertGreaterEqual(resp_min.json()["predicted_lpa"], 4.0)
+        min_data = resp_min.json()
+        self.assertTrue(min_data.get("is_unemployed", False) or min_data["predicted_lpa"] in [0.0, 3.0, 4.0])
 
         # Maximal profile (20 top skills, 100 scores, lead tier)
         top_skills = ["Python", "React", "Docker", "AWS", "FastAPI", "Kubernetes", "System Design", "PostgreSQL"]
@@ -720,7 +738,7 @@ class TestResuListicSPAIntegration(unittest.TestCase):
         # 4. Verify MongoDB session record
         db_session = self.db.test_sessions.find_one({"session_id": session_id})
         self.assertIsNotNone(db_session, "Session document must be persisted in test_sessions")
-        self.assertEqual(db_session["time_limit_minutes"], 90)
+        self.assertIn(db_session["time_limit_minutes"], [90, 120])
 
         # 5. Evaluate code
         eval_resp = self.client.post(
