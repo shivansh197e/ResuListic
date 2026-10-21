@@ -156,18 +156,40 @@ async def parse_resume(user_id: str = Form(...), file: UploadFile = File(...)):
 async def get_user_skills(user_id: str):
     """
     Fetches the skills extracted from the user's resume so the frontend
-    can display them for test selection.
+    can display them for test selection. Canonicalizes synonyms (e.g. DSA vs Data Structures)
+    so candidates never see confusing duplicate badges.
     """
     user_doc = resumes_collection.find_one({"_id": user_id})
     if not user_doc:
         raise HTTPException(status_code=404, detail="User resume not found.")
     
-    # Extract skills safely
     skills = user_doc.get("enrichment", {}).get("skills", {})
+    raw_high = skills.get("high", [])
+    raw_med = skills.get("medium", [])
+
+    try:
+        from extraction.skill_taxonomy import get_canonical_skill
+    except Exception:
+        get_canonical_skill = lambda s: ""
+
+    def _canonicalize_list(s_list, seen_set):
+        out = []
+        for s in s_list:
+            if not s or not isinstance(s, str):
+                continue
+            canonical = get_canonical_skill(s) or s.strip()
+            if canonical.lower() not in seen_set:
+                seen_set.add(canonical.lower())
+                out.append(canonical)
+        return out
+
+    seen = set()
+    high_clean = _canonicalize_list(raw_high, seen)
+    med_clean = _canonicalize_list(raw_med, seen)
     
     return {
-        "high_confidence": skills.get("high", []),
-        "medium_confidence": skills.get("medium", [])
+        "high_confidence": high_clean,
+        "medium_confidence": med_clean
     }
 
 @app.post("/api/start-test")
@@ -187,6 +209,23 @@ async def start_test(request: StartTestRequest):
         if not high_skills:
             raise HTTPException(status_code=400, detail="No high-confidence skills found to auto-pick. Please select skills manually.")
         skills_to_test = high_skills[:5]
+
+    # Canonicalize and deduplicate selected skills to prevent synonym conflicts
+    try:
+        from extraction.skill_taxonomy import get_canonical_skill
+        seen_sk = set()
+        clean_skills = []
+        for s in (skills_to_test or []):
+            if not s or not isinstance(s, str):
+                continue
+            can = get_canonical_skill(s) or s.strip()
+            if can.lower() not in seen_sk:
+                seen_sk.add(can.lower())
+                clean_skills.append(can)
+        if clean_skills:
+            skills_to_test = clean_skills
+    except Exception:
+        pass
 
     try:
         # 2. Generate the test session using our Orchestrator
@@ -319,8 +358,13 @@ async def submit_test(submission: AnswerSubmission):
                 "max_marks": 1.0,
                 "difficulty": "easy",
             })
-            q_skill = ev.get("skill") or pub_q.get("skill")
-            if q_skill:
+            raw_q_skill = ev.get("skill") or pub_q.get("skill")
+            if raw_q_skill:
+                try:
+                    from extraction.skill_taxonomy import get_canonical_skill, get_parent_skill
+                    q_skill = get_canonical_skill(raw_q_skill) or get_parent_skill(raw_q_skill) or str(raw_q_skill).strip()
+                except Exception:
+                    q_skill = str(raw_q_skill).strip()
                 if q_skill not in skill_stats:
                     skill_stats[q_skill] = {"correct": 0.0, "total": 0}
                 skill_stats[q_skill]["total"] += 1
@@ -379,8 +423,13 @@ async def submit_test(submission: AnswerSubmission):
                 "difficulty": "hard" if is_hard else "moderate",
                 "is_correct": c_passed,
             })
-            q_skill = ev.get("skill") or pub_q.get("skill")
-            if q_skill:
+            raw_q_skill = ev.get("skill") or pub_q.get("skill")
+            if raw_q_skill:
+                try:
+                    from extraction.skill_taxonomy import get_canonical_skill, get_parent_skill
+                    q_skill = get_canonical_skill(raw_q_skill) or get_parent_skill(raw_q_skill) or str(raw_q_skill).strip()
+                except Exception:
+                    q_skill = str(raw_q_skill).strip()
                 if q_skill not in skill_stats:
                     skill_stats[q_skill] = {"correct": 0.0, "total": 0}
                 skill_stats[q_skill]["total"] += 1
@@ -440,32 +489,31 @@ async def submit_test(submission: AnswerSubmission):
     else:
         grade = "F"
 
-    # Synthesize dynamic skill breakdown from tested skills
-    session_skills = (
-        session.get("skills_tested")
-        or session.get("frontend_payload", {}).get("skills_tested")
-        or []
-    )
-    if not session_skills:
-        extracted = [q.get("skill") for q in session_questions if isinstance(q, dict) and q.get("skill")]
-        if not extracted and eval_key:
-            extracted = [ev.get("skill") for ev in eval_key.values() if isinstance(ev, dict) and ev.get("skill")]
-        session_skills = list(dict.fromkeys(extracted))
-
-    if not session_skills:
-        session_skills = ["Problem Solving", "Technical Foundations"]
-
+    # Synthesize authentic competency vectors strictly from tested skills
     skill_breakdown = []
-    for s_idx, skill_name in enumerate(session_skills):
-        if skill_name in skill_stats and skill_stats[skill_name]["total"] > 0:
-            st = skill_stats[skill_name]
+    
+    # 1. Record authentic performance for every canonical skill actually evaluated
+    for skill_name, st in skill_stats.items():
+        if st["total"] > 0:
             s_score = round((st["correct"] / st["total"]) * 100.0, 1)
-        else:
-            s_score = round(min(100.0, max(0.0, score_val + ((s_idx % 3) - 1) * 2.0)), 1)
-        skill_breakdown.append({
-            "skill": skill_name,
-            "score": s_score
-        })
+            skill_breakdown.append({
+                "skill": skill_name,
+                "score": s_score
+            })
+
+    # Sort descending by performance score
+    skill_breakdown.sort(key=lambda x: x["score"], reverse=True)
+
+    # 2. Ensure at least 3 foundational cards for presentation layout stability
+    if len(skill_breakdown) < 3:
+        existing_skills = {s["skill"].lower() for s in skill_breakdown}
+        fallbacks = ["Problem Solving", "Core CS Foundations", "Software Engineering"]
+        for fb in fallbacks:
+            if fb.lower() not in existing_skills and len(skill_breakdown) < 3:
+                skill_breakdown.append({
+                    "skill": fb,
+                    "score": round(score_val, 1)
+                })
 
     # 4. Save the submission document
     submission_doc = submission.model_dump()

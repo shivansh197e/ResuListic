@@ -190,6 +190,27 @@ def build_resume_document(file_path: str, user_id: str) -> dict | None:
         skills_extracted["high"] = skills_extracted["medium"][:6]
         skills_extracted["medium"] = skills_extracted["medium"][6:]
 
+    # Canonicalize and deduplicate extracted skills to prevent synonym fragmentation (e.g. DSA vs Data Structures)
+    try:
+        from extraction.skill_taxonomy import get_canonical_skill
+    except Exception:
+        get_canonical_skill = lambda s: ""
+
+    def _canonicalize_list(s_list, seen_set):
+        out = []
+        for s in s_list:
+            if not s or not isinstance(s, str):
+                continue
+            canonical = get_canonical_skill(s) or s.strip()
+            if canonical.lower() not in seen_set:
+                seen_set.add(canonical.lower())
+                out.append(canonical)
+        return out
+
+    seen_skills = set()
+    skills_extracted["high"] = _canonicalize_list(skills_extracted.get("high", []), seen_skills)
+    skills_extracted["medium"] = _canonicalize_list(skills_extracted.get("medium", []), seen_skills)
+
     # ── Step 8: External Module Calls (Placeholders) ────────────────────────
     # skill_test_result = evaluate_skills(skills_extracted)
     # predicted_job_id  = predict_job_id(skills_extracted, sections)

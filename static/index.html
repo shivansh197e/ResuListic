@@ -1035,6 +1035,10 @@
       const renderQuestionContent = (rawText) => {
         if (!rawText) return null;
         let text = String(rawText).replace(/^\[.*?\]\s*/, '').replace(/^(topic|skill):\s*.*?\n?/i, '').trim();
+        // Guard against leaked options/output code fences appearing after question prompt
+        text = text.replace(/(what\s+(?:is|will\s+be)\s+(?:the\s+)?(?:output|printed|result|returned|value)\s*(?:\([^\)]*\))?\s*\??\s*)(```[\s\S]*?```)/i, '$1').trim();
+        text = text.replace(/(```[\s\S]*?```[\s\S]*?\?\s*)(```[\s\S]*?```)/g, '$1').trim();
+        text = text.replace(/\n\s*(?:[A-D][).:\s]|\d+[).:\s])[\s\S]*$/, '').trim();
         const codeBlockRegex = /```(?:[a-zA-Z0-9_-]+)?\s*([\s\S]*?)```/g;
         if (!codeBlockRegex.test(text)) {
           // Check for unbackticked code (e.g. "What is the output of the following code snippet? x = [1, 2, 3]...")

@@ -44,6 +44,27 @@ def _parse_llm_mcq_batch(raw_content: str) -> Optional[LLMQuestionBatch]:
     return None
 
 
+def strip_leaked_options_from_question(text: str) -> str:
+    """Removes leaked options/output blocks accidentally placed after question sentences."""
+    if not text:
+        return ""
+    # Strip any code block that appears immediately after "What is the output?", "What will be printed?", etc.
+    output_q_pattern = r"(What\s+(?:is|will\s+be)\s+(?:the\s+)?(?:output|printed|result|returned|value)\s*(?:\([^\)]*\))?\s*\??\s*)(```[\s\S]*?```)"
+    m = re.search(output_q_pattern, text, flags=re.IGNORECASE)
+    if m:
+        text = text[:m.start(2)].strip()
+
+    # Strip any second code fence following a question mark
+    multi_block_pattern = r"(```[\s\S]*?```[\s\S]*?\?\s*)(```[\s\S]*?```)"
+    m2 = re.search(multi_block_pattern, text)
+    if m2:
+        text = text[:m2.start(2)].strip()
+
+    # Strip any trailing letter/number option lines leaked in question text
+    text = re.sub(r"\n\s*(?:[A-D][).:\s]|\d+[).:\s])[\s\S]*$", "", text)
+    return text.strip()
+
+
 def format_code_snippet(code: str) -> str:
     """Formats code snippets across proper separate lines with clean indentation."""
     code = code.strip()
@@ -70,6 +91,7 @@ def format_code_snippet(code: str) -> str:
 
 def format_question_code_blocks(text: str) -> str:
     """Detects and formats code snippets in question text into clean multi-line markdown fences."""
+    text = strip_leaked_options_from_question(text)
     pattern = r"```([a-zA-Z0-9_-]*)\s*([\s\S]*?)```"
     if re.search(pattern, text):
         def repl(m):
@@ -103,7 +125,8 @@ def _call_groq_mcq_batch(client, model: str, skills_str: str, count: int) -> Lis
         f"1. Do NOT mention, prefix, or leak the skill name, language name, framework name, or topic name in the question text or options (e.g. NEVER write '[Python]', '[FastAPI]', 'In React...', 'Which SQL clause...', 'Consider the following C++ code').\n"
         f"2. The candidate must deduce the answer purely from code snippets, technical logic, realistic architectural scenarios, or algorithmic principles.\n"
         f"3. MULTI-LINE CODE FORMATTING: If including a code snippet in the question, format each programming statement on its OWN SEPARATE LINE inside markdown code fences ``` with clean indentation. Never collapse multiple code statements into a single line.\n"
-        f"4. Return strict JSON with key 'questions' containing exactly {safe_count} question objects.\n"
+        f"4. NEVER include options, answer choices, or the expected output inside the 'question' field! The 'question' field must ONLY contain the problem description and any code to evaluate. All 4 choices must ONLY be in the 'options' list. Never output the expected result or option choices inside the question text or in backticks at the end of the question.\n"
+        f"5. Return strict JSON with key 'questions' containing exactly {safe_count} question objects.\n"
         f"Each object must have:\n"
         f"- 'skill' (string category)\n- 'question' (clean question string, multi-line code inside ``` fences if applicable, NO topic prefixes)\n- 'options' (list of 4 clean strings WITHOUT letter prefixes like A), B), C), D))\n"
         f"- 'correct_answer' (one of: 'A', 'B', 'C', 'D')\n- 'explanation' (concise 1-sentence rationale)"
@@ -130,6 +153,8 @@ def _call_groq_mcq_batch(client, model: str, skills_str: str, count: int) -> Lis
                 # Strip any accidental [Skill] or Topic: prefix from question text
                 clean_q_text = re.sub(r"^\[.*?\]\s*", "", q.question).strip()
                 clean_q_text = re.sub(r"^(topic|skill):\s*.*?\n", "", clean_q_text, flags=re.IGNORECASE).strip()
+                # Strip any leaked options from question text
+                clean_q_text = strip_leaked_options_from_question(clean_q_text)
                 # Apply multi-line code formatting
                 clean_q_text = format_question_code_blocks(clean_q_text)
                 q.question = clean_q_text
