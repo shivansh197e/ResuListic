@@ -823,6 +823,14 @@
       const [loading, setLoading] = useState(true);
       const timerRef = useRef(null);
 
+      // Refs to guard against stale closures during timer auto-submit
+      const answersRef = useRef(answers);
+      const codeAnswersRef = useRef(codeAnswers);
+      const evalScoresRef = useRef(evalScores);
+      answersRef.current = answers;
+      codeAnswersRef.current = codeAnswers;
+      evalScoresRef.current = evalScores;
+
       const isSubjectiveQuestion = (q) => {
         if (!q) return false;
         if (q.question_type === 'subjective' || q.question_type === 'text') return true;
@@ -963,10 +971,13 @@
 
       const handleSubmit = async (isExpired = false) => {
         clearInterval(timerRef.current);
+        const curAnswers = answersRef.current || {};
+        const curCodeAnswers = codeAnswersRef.current || {};
+        const curEvalScores = evalScoresRef.current || {};
         const submission = (session?.questions || []).map((q, idx) => ({
           q_index: q.q_index !== undefined ? q.q_index : idx,
-          user_answer: q.question_type === 'coding' || q.question_type === 'subjective' || q.question_type === 'text' ? (codeAnswers[idx] || '') : (answers[idx] || ''),
-          eval_score: (q.question_type !== 'mcq') && evalScores[idx] !== undefined ? evalScores[idx] : undefined
+          user_answer: q.question_type === 'coding' || q.question_type === 'subjective' || q.question_type === 'text' ? (curCodeAnswers[idx] || '') : (curAnswers[idx] || ''),
+          eval_score: (q.question_type !== 'mcq') && curEvalScores[idx] !== undefined ? curEvalScores[idx] : undefined
         }));
         const res = await api.submitTest(session?.session_id || 'SESSION_ALPHA_099', userId, submission);
         onCompleteQuiz({

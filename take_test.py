@@ -65,7 +65,7 @@ def main():
             user_id = args.user_id or "test_user"
             selected_skills = ["Array"]
 
-    uri = os.getenv("MONGODB_URI")
+    uri = os.getenv("MONGODB_URI") or os.getenv("MONGO_URI")
     client = MongoClient(uri)
     db = client.resulistic_db
 

@@ -1,5 +1,5 @@
 """code_evaluator.py — Minimalist Groq LLM-as-a-Judge code evaluation engine and MongoDB persistence. (<120 LOC)."""
-import os, json, time
+import os, json, time, re
 from datetime import datetime, timezone
 from typing import Optional, Tuple
 from bson import ObjectId
@@ -125,7 +125,6 @@ def evaluate_code(
             models_to_try.append(m)
     last_err = None
 
-    import re
     is_conceptual = bool(re.search(
         r"^(explain|describe|define|why|what is|what are|discuss|compare|differentiate|how does)\b",
         p_desc,
