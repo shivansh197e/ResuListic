@@ -5,7 +5,7 @@ Verifies:
 2. All 5 dataset domains present in questions_moderate, questions_hard, and solutions.
 3. 100% matching reference solutions in solutions collection.
 4. Document schema conformity with CodingQuestionDoc and SolutionDoc.
-5. Test session generation (10 questions each) for OOPS, Datascience, System Design, and mix skill.
+5. Test session generation (25 questions each) for OOPS, Datascience, System Design, and mix skill.
 """
 
 import os
@@ -162,15 +162,15 @@ def main():
 
     test_skills = ["OOPS", "Datascience", "System Design", "mix skill"]
     for skill in test_skills:
-        print(f"  Generating 10-question session for skill '{skill}'...")
+        print(f"  Generating 25-question session for skill '{skill}'...")
         session = generate_test_session(db, f"verify_{skill}_user", [skill])
         assert "frontend_payload" in session and "evaluation_key" in session
         questions = session["frontend_payload"]["questions"]
-        assert len(questions) == 10, f"Expected 10 questions for {skill}, got {len(questions)}"
+        assert len(questions) == 25, f"Expected 25 questions for {skill}, got {len(questions)}"
 
         mcqs = [q for q in questions if q.get("question_type") == "mcq"]
         coding = [q for q in questions if q.get("question_type") == "coding"]
-        assert len(mcqs) == 5, f"Expected 5 MCQs for {skill}, got {len(mcqs)}"
+        assert len(mcqs) == 20, f"Expected 20 MCQs for {skill}, got {len(mcqs)}"
         assert len(coding) == 5, f"Expected 5 coding questions for {skill}, got {len(coding)}"
 
         mods = [q for q in coding if q.get("difficulty") == "moderate"]
@@ -191,7 +191,7 @@ def main():
             })
             assert sol is not None, f"Solution lookup failed for {ev}"
 
-        print(f"    -> [SUCCESS] 10 questions (5 MCQs, 3 Moderate, 2 Hard) verified for '{skill}'.")
+        print(f"    -> [SUCCESS] 25 questions (20 MCQs, 3 Moderate, 2 Hard) verified for '{skill}'.")
 
     print("\n" + "=" * 70)
     print("ALL ACCEPTANCE CRITERIA VERIFIED SUCCESSFULLY!")

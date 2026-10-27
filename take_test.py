@@ -71,7 +71,7 @@ def main():
 
     print(f"\n[1/3] Generating test for {user_id} on {selected_skills}...")
     try:
-        limit_arg = args.time_limit_minutes if args.time_limit_minutes is not None else 90
+        limit_arg = args.time_limit_minutes if args.time_limit_minutes is not None else 120
         session = generate_test_session(db, user_id, selected_skills, time_limit_minutes=limit_arg)
     except Exception as e:
         print(f"Error generating test: {e}", file=sys.stderr)
@@ -110,7 +110,7 @@ def main():
         s = rem_secs % 60
         return f"{h:02d}:{m:02d}:{s:02d}"
 
-    session_time_limit = payload.get("time_limit_minutes", 90)
+    session_time_limit = payload.get("time_limit_minutes", 120)
     time_limit_minutes = args.time_limit_minutes if args.time_limit_minutes is not None else session_time_limit
     time_limit_seconds = time_limit_minutes * 60
 

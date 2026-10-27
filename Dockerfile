@@ -2,6 +2,14 @@
 # ResuListic — Full-Stack AI & OCR Dockerfile
 # Includes: Python 3.12, Tesseract OCR, Poppler Utils, spaCy NLP
 # ═══════════════════════════════════════════════════════════════
+FROM node:22-alpine AS frontend-build
+
+WORKDIR /frontend
+COPY frontend/package.json ./
+RUN npm install --no-audit --no-fund
+COPY frontend/ ./
+RUN npm run build
+
 FROM python:3.12-slim
 
 # Prevent Python from writing .pyc files and buffer stdout/stderr
@@ -30,6 +38,10 @@ RUN pip install --no-cache-dir --upgrade pip && \
 
 # 3. Copy application code
 COPY . .
+
+# Serve the compiled React application through FastAPI's existing static mount.
+RUN rm -rf /app/static/*
+COPY --from=frontend-build /frontend/build/ /app/static/
 
 # Create temporary upload directory
 RUN mkdir -p /app/temp_uploads

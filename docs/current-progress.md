@@ -37,7 +37,7 @@
 - **Schemas Defined:** Created `question_schema.py` using Pydantic to strictly define the API payloads.
 - **AI Generator Built:** Created `ai_question_generator.py` using Gemini 2.5 Flash to generate 5 Easy MCQs via structured JSON output.
 - **Circular Logic Built:** Created `circular_tracker.py` to handle the modulo-based pointer algorithm for Hard coding questions.
-- **Test Orchestrator Built:** Created `question_selector.py` to assemble the final 10-question test session.
+- **Test Orchestrator Built:** Created `question_selector.py` to assemble the final 25-question test session (20 MCQs, 3 moderate coding, 2 hard coding) with a 120-minute deadline.
 - **Mock Data Seeder Built:** Created `data_builder.py` to seed the database with moderate/hard coding questions.
 
 ### What's Pending in Phase 4:

@@ -1,6 +1,6 @@
 """
-question_selector.py — Assembles a 10-question test session.
-5 easy AI MCQs + 3 random moderate coding + 2 circular hard coding.
+question_selector.py — Assembles a 25-question test session.
+20 AI MCQs + 3 random moderate coding + 2 circular hard coding.
 """
 
 import re
@@ -189,7 +189,8 @@ def generate_test_session(db: Database, user_id: str, selected_skills: list[str]
         moderate_docs.extend(backfill)
 
     for doc in moderate_docs:
-        q_type = "subjective" if _is_subjective_doc(doc) else "coding"
+        # The assessment contract reserves all moderate slots for coding tasks.
+        q_type = "coding"
         clean_t = _clean_title(doc.get("title", "Moderate Coding Problem"))
         clean_d = _clean_and_enrich_description(doc.get("description", ""), clean_t)
         all_questions.append({
@@ -247,7 +248,8 @@ def generate_test_session(db: Database, user_id: str, selected_skills: list[str]
         hard_docs.extend(backfill)
 
     for doc in hard_docs:
-        q_type = "subjective" if _is_subjective_doc(doc) else "coding"
+        # The assessment contract reserves all hard slots for coding tasks.
+        q_type = "coding"
         clean_t = _clean_title(doc.get("title", "Hard Algorithmic Challenge"))
         clean_d = _clean_and_enrich_description(doc.get("description", ""), clean_t)
         all_questions.append({
@@ -288,6 +290,7 @@ def generate_test_session(db: Database, user_id: str, selected_skills: list[str]
     session_out = TestSessionOut(
         session_id=session_id,
         user_id=user_id,
+        mode="live",
         skills_tested=selected_skills,
         total_questions=len(public_questions),
         questions=public_questions,

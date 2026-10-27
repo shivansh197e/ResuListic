@@ -34,6 +34,7 @@ class TestSessionOut(BaseModel):
     """Complete test session payload for the frontend."""
     session_id: str
     user_id: str
+    mode: str = "live"
     skills_tested: list[str]
     total_questions: int = 25
     questions: list[dict]  # Mix of MCQ and Coding question dicts
@@ -49,7 +50,8 @@ class StartTestRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     user_id: str = Field(validation_alias=AliasChoices("user_id", "userId"))
-    selected_skills: Optional[list[str]] = Field(default=None, validation_alias=AliasChoices("selected_skills", "selectedSkills"))  # None = auto-pick top 5
+    selected_skills: Optional[list[str]] = Field(default=None, max_length=20, validation_alias=AliasChoices("selected_skills", "selectedSkills"))  # None = auto-pick top 5
+    mode: str = Field(default="live", pattern="^(live|mock)$")
 
 
 class AnswerSubmission(BaseModel):
@@ -57,7 +59,7 @@ class AnswerSubmission(BaseModel):
 
     session_id: str = Field(validation_alias=AliasChoices("session_id", "sessionId"))
     user_id: str = Field(validation_alias=AliasChoices("user_id", "userId"))
-    answers: list[dict]  # [{"q_index": 0, "user_answer": "B"}, ...]
+    answers: list[dict] = Field(max_length=25)  # [{"q_index": 0, "user_answer": "B"}, ...]
 
 
 TestSubmissionRequest = AnswerSubmission
@@ -81,9 +83,9 @@ class EvaluateRequest(BaseModel):
 
     user_id: str = Field(validation_alias=AliasChoices("user_id", "userId"))
     question_id: str = Field(validation_alias=AliasChoices("question_id", "questionId"))
-    code: str
-    problem_description: Optional[str] = Field(default=None, validation_alias=AliasChoices("problem_description", "problemDescription"))
-    reference_solution: Optional[str] = Field(default=None, validation_alias=AliasChoices("reference_solution", "referenceSolution"))
+    code: str = Field(max_length=50000)
+    problem_description: Optional[str] = Field(default=None, max_length=20000, validation_alias=AliasChoices("problem_description", "problemDescription"))
+    reference_solution: Optional[str] = Field(default=None, max_length=50000, validation_alias=AliasChoices("reference_solution", "referenceSolution"))
     mock: Optional[bool] = False
 
 

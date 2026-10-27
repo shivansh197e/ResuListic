@@ -1,6 +1,7 @@
 import os
 import sys
 import shutil
+import uuid
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -61,11 +62,14 @@ from salary_predictor.predictor import (
 # Initialize FastAPI App
 app = FastAPI(title="ResuListic API", version="1.0", description="API for Resume Parsing and Skill Testing")
 
+MAX_UPLOAD_BYTES = int(os.getenv("MAX_UPLOAD_BYTES", str(10 * 1024 * 1024)))
+_mock_sessions = {}
+
 # Allow Frontend to communicate with this Backend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=[origin.strip() for origin in os.getenv("CORS_ORIGINS", "http://localhost:3000,http://localhost:8000").split(",") if origin.strip()],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -111,20 +115,27 @@ async def parse_resume(user_id: str = Form(...), file: UploadFile = File(...)):
     """
     # 1. Validate file extension
     valid_extensions = ('.pdf', '.docx', '.png', '.jpg', '.jpeg')
-    if not file.filename.lower().endswith(valid_extensions):
+    original_filename = file.filename or ""
+    if not original_filename.lower().endswith(valid_extensions):
         raise HTTPException(status_code=400, detail="Unsupported file format.")
 
     # 2. Save the uploaded file temporarily so our parser can read it
-    temp_dir = os.path.join(os.getcwd(), "temp_uploads")
+    temp_dir = os.path.join(_PROJECT_ROOT, "temp_uploads")
     os.makedirs(temp_dir, exist_ok=True)
-    temp_file_path = os.path.join(temp_dir, file.filename)
+    extension = os.path.splitext(original_filename)[1].lower()
+    temp_file_path = os.path.join(temp_dir, f"upload_{uuid.uuid4().hex}{extension}")
 
     try:
+        total_bytes = 0
         with open(temp_file_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
+            while chunk := file.file.read(1024 * 1024):
+                total_bytes += len(chunk)
+                if total_bytes > MAX_UPLOAD_BYTES:
+                    raise HTTPException(status_code=413, detail="Resume file is larger than the 10 MB limit.")
+                buffer.write(chunk)
 
         # 3. Process the file through our ML/NLP pipeline
-        print(f"Processing {file.filename} for user {user_id}...")
+        print(f"Processing {original_filename} for user {user_id}...")
         parsed_data = build_resume_document(temp_file_path, user_id)
 
         if not parsed_data:
@@ -144,6 +155,8 @@ async def parse_resume(user_id: str = Form(...), file: UploadFile = File(...)):
             "data": parsed_data
         }
 
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     finally:
@@ -195,9 +208,15 @@ async def get_user_skills(user_id: str):
 @app.post("/api/start-test")
 async def start_test(request: StartTestRequest):
     """
-    Generates a 10-question dynamic test session based on the selected skills.
+    Generates a 25-question dynamic test session based on the selected skills.
     If no skills are selected, it defaults to the user's top high-confidence skills.
     """
+    if request.mode == "mock":
+        from skill_test.mock_session import build_mock_session, finalize_mock_session
+        mock_session = finalize_mock_session(build_mock_session(request.user_id))
+        _mock_sessions[mock_session["session_id"]] = mock_session
+        return mock_session["frontend_payload"]
+
     # 1. Fetch user doc to get fallback skills if needed
     user_doc = resumes_collection.find_one({"_id": request.user_id})
     skills_to_test = request.selected_skills
@@ -230,7 +249,7 @@ async def start_test(request: StartTestRequest):
     try:
         # 2. Generate the test session using our Orchestrator
         # Note: This calls Gemini (AI) and MongoDB (Circular Tracker)
-        session_data = generate_test_session(db, request.user_id, skills_to_test)
+        session_data = generate_test_session(db, request.user_id, skills_to_test, time_limit_minutes=120)
         
         # 3. Save the full session (including evaluation keys/answers) to the database securely
         test_sessions_collection.insert_one(session_data)
@@ -245,12 +264,12 @@ async def start_test(request: StartTestRequest):
 @app.post("/api/submit-test")
 async def submit_test(submission: AnswerSubmission):
     """
-    Receives user test answers, enforces the 90-minute session deadline,
+    Receives user test answers, enforces the 120-minute session deadline,
     grades completed MCQ answers against secret keys, and persists submission records.
     """
     # 1. Verify the session exists
     clean_session_id = str(submission.session_id).strip()
-    session = (
+    session = _mock_sessions.get(clean_session_id) or (
         test_sessions_collection.find_one({"frontend_payload.session_id": submission.session_id})
         or test_sessions_collection.find_one({"session_id": submission.session_id})
         or test_sessions_collection.find_one({"frontend_payload.session_id": clean_session_id})
@@ -258,6 +277,13 @@ async def submit_test(submission: AnswerSubmission):
     )
     if not session:
         raise HTTPException(status_code=404, detail="Test session not found.")
+
+    session_owner = session.get("user_id") or session.get("frontend_payload", {}).get("user_id")
+    if session_owner and session_owner != submission.user_id:
+        raise HTTPException(status_code=403, detail="This session belongs to another user.")
+
+    if test_submissions_collection.find_one({"session_id": clean_session_id, "user_id": submission.user_id}):
+        raise HTTPException(status_code=409, detail="This assessment has already been submitted.")
 
     # 2. Enforce session deadline
     now_dt = datetime.now(timezone.utc)
@@ -272,12 +298,12 @@ async def submit_test(submission: AnswerSubmission):
     time_limit_val = (
         session.get("time_limit_minutes")
         or session.get("frontend_payload", {}).get("time_limit_minutes")
-        or 90
+        or 120
     )
     try:
         time_limit_minutes = float(time_limit_val)
     except (ValueError, TypeError):
-        time_limit_minutes = 90.0
+        time_limit_minutes = 120.0
 
     if started_at_val:
         try:
@@ -312,7 +338,7 @@ async def submit_test(submission: AnswerSubmission):
     if is_expired:
         status = "submitted_expired"
         dur_msg = f"{duration_seconds:.1f}s" if duration_seconds is not None else "unknown duration"
-        print(f"[WARNING] Session {submission.session_id} submitted after 90m expiration. Duration taken: {dur_msg}.")
+        print(f"[WARNING] Session {submission.session_id} submitted after 120m expiration. Duration taken: {dur_msg}.")
     else:
         status = "submitted"
 
@@ -330,10 +356,17 @@ async def submit_test(submission: AnswerSubmission):
     hard_passed = 0
     hard_score_sum = 0.0
     graded_answers = []
+    answer_review = []
     skill_stats = {}
 
+    seen_question_indexes = set()
     for ans in submission.answers:
         q_idx = str(ans.get("q_index", ""))
+        if q_idx not in pub_q_map:
+            raise HTTPException(status_code=400, detail=f"Unknown question index: {q_idx}")
+        if q_idx in seen_question_indexes:
+            raise HTTPException(status_code=400, detail=f"Duplicate answer for question index: {q_idx}")
+        seen_question_indexes.add(q_idx)
         raw_user_ans = ans.get("user_answer")
         user_ans = str(raw_user_ans).strip().upper() if raw_user_ans is not None else ""
         ev = eval_key.get(q_idx) or eval_key.get(int(q_idx) if q_idx.isdigit() else -1) or {}
@@ -349,6 +382,7 @@ async def submit_test(submission: AnswerSubmission):
             q_marks = 1.0 if is_corr else 0.0
             if is_corr:
                 mcq_correct += 1
+            raw_q_skill = ev.get("skill") or pub_q.get("skill")
             graded_answers.append({
                 "q_index": ans.get("q_index"),
                 "user_answer": raw_user_ans,
@@ -358,7 +392,18 @@ async def submit_test(submission: AnswerSubmission):
                 "max_marks": 1.0,
                 "difficulty": "easy",
             })
-            raw_q_skill = ev.get("skill") or pub_q.get("skill")
+            answer_review.append({
+                "q_index": ans.get("q_index"),
+                "question_type": "mcq",
+                "skill": raw_q_skill or "",
+                "difficulty": difficulty or "easy",
+                "question": pub_q.get("question") or pub_q.get("title", ""),
+                "options": pub_q.get("options", []),
+                "user_answer": raw_user_ans,
+                "correct_answer": corr,
+                "is_correct": is_corr,
+                "explanation": ev.get("explanation", ""),
+            })
             if raw_q_skill:
                 try:
                     from extraction.skill_taxonomy import get_canonical_skill, get_parent_skill
@@ -389,9 +434,6 @@ async def submit_test(submission: AnswerSubmission):
             if is_untouched_starter:
                 c_score = 0.0
                 c_passed = False
-            elif ans.get("eval_score") is not None:
-                c_score = float(ans.get("eval_score"))
-                c_passed = c_score >= 50.0
             else:
                 from skill_test.code_evaluator import mock_evaluate_code
                 m_res = mock_evaluate_code(code_str)
@@ -424,6 +466,25 @@ async def submit_test(submission: AnswerSubmission):
                 "is_correct": c_passed,
             })
             raw_q_skill = ev.get("skill") or pub_q.get("skill")
+            reference_solution = ""
+            try:
+                _, solution_doc = get_question_and_solution(db, str(ev.get("question_id") or pub_q.get("question_id") or ""))
+                reference_solution = solution_doc.get("reference_solution", "") if solution_doc else ""
+            except Exception:
+                reference_solution = ""
+            answer_review.append({
+                "q_index": ans.get("q_index"),
+                "question_type": "coding",
+                "skill": raw_q_skill or "",
+                "difficulty": "hard" if is_hard else "moderate",
+                "question": pub_q.get("title") or pub_q.get("question", ""),
+                "description": pub_q.get("description", ""),
+                "user_answer": raw_user_ans,
+                "score": c_score,
+                "max_marks": q_max_marks,
+                "is_correct": c_passed,
+                "reference_solution": reference_solution,
+            })
             if raw_q_skill:
                 try:
                     from extraction.skill_taxonomy import get_canonical_skill, get_parent_skill
@@ -434,6 +495,49 @@ async def submit_test(submission: AnswerSubmission):
                     skill_stats[q_skill] = {"correct": 0.0, "total": 0}
                 skill_stats[q_skill]["total"] += 1
                 skill_stats[q_skill]["correct"] += (c_score / 100.0)
+
+    # Include unanswered questions in the post-submit review without exposing
+    # answer keys before this endpoint is called.
+    reviewed_indexes = {str(item.get("q_index")) for item in answer_review}
+    for q_idx, pub_q in pub_q_map.items():
+        if q_idx in reviewed_indexes:
+            continue
+        ev = eval_key.get(q_idx) or eval_key.get(int(q_idx) if q_idx.isdigit() else -1) or {}
+        if ev.get("question_type") == "mcq" or pub_q.get("question_type") == "mcq":
+            answer_review.append({
+                "q_index": pub_q.get("q_index"),
+                "question_type": "mcq",
+                "skill": ev.get("skill") or pub_q.get("skill", ""),
+                "difficulty": "easy",
+                "question": pub_q.get("question") or pub_q.get("title", ""),
+                "options": pub_q.get("options", []),
+                "user_answer": "",
+                "correct_answer": str(ev.get("correct_answer", "")).upper(),
+                "is_correct": False,
+                "explanation": ev.get("explanation", ""),
+            })
+        else:
+            reference_solution = ""
+            try:
+                _, solution_doc = get_question_and_solution(db, str(ev.get("question_id") or pub_q.get("question_id") or ""))
+                reference_solution = solution_doc.get("reference_solution", "") if solution_doc else ""
+            except Exception:
+                reference_solution = ""
+            answer_review.append({
+                "q_index": pub_q.get("q_index"),
+                "question_type": "coding",
+                "skill": ev.get("skill") or pub_q.get("skill", ""),
+                "difficulty": ev.get("difficulty") or pub_q.get("difficulty", "moderate"),
+                "question": pub_q.get("title") or pub_q.get("question", ""),
+                "description": pub_q.get("description", ""),
+                "user_answer": "",
+                "score": 0.0,
+                "max_marks": 25.0 if str(ev.get("difficulty", "")).lower() == "hard" else 10.0,
+                "is_correct": False,
+                "reference_solution": reference_solution,
+            })
+
+    answer_review.sort(key=lambda item: int(item.get("q_index", 0)))
 
     # 100-Mark System: MCQs = 20 marks, Moderate = 30 marks, Hard = 50 marks
     if mcq_total == 20:
@@ -464,13 +568,13 @@ async def submit_test(submission: AnswerSubmission):
         score_val = round(min(100.0, max(0.0, mcq_marks_val + moderate_marks_val + hard_marks_val)), 1)
         mcq_score_val = round((mcq_correct / mcq_total) * 100.0, 1) if mcq_total > 0 else 0.0
         coding_score_val = round(((moderate_marks_val + hard_marks_val) / 80.0) * 100.0, 1)
-        total_questions_out = mcq_total + coding_total
+        total_questions_out = len(session_questions)
         correct_answers_out = mcq_correct + coding_passed
     else:
         mcq_score_val = round((mcq_correct / mcq_total) * 100.0, 1) if mcq_total > 0 else 0.0
         score_val = mcq_score_val
         coding_score_val = 0.0
-        total_questions_out = mcq_total
+        total_questions_out = len(session_questions)
         correct_answers_out = mcq_correct
 
     # Calculate letter grade
@@ -554,6 +658,7 @@ async def submit_test(submission: AnswerSubmission):
         "total_questions": total_questions_out,
         "grade": grade,
         "skill_breakdown": skill_breakdown,
+        "answer_review": answer_review,
         "message": (
             "Test submitted after deadline. Completed answers evaluated."
             if is_expired

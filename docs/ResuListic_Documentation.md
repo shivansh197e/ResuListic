@@ -100,7 +100,7 @@ ResuListic/
 * **Endpoint:** `POST /api/start-test`
 * **Format:** `application/json`
 * **Inputs:** `user_id` (String), `selected_skills` (List of Strings, optional)
-* **Description:** Orchestrates a 10-question dynamic exam (5 Easy AI MCQs, 3 Random Moderate Coding, 2 Deterministic Hard Coding).
+* **Description:** Orchestrates a 25-question dynamic exam (20 Groq AI MCQs, 3 Random Moderate Coding, 2 Deterministic Hard Coding) within 120 minutes.
 
 ### 4.4 Submit Test (Pending Implementation)
 * **Endpoint:** `POST /api/submit-test`

@@ -169,8 +169,8 @@ def run_tier_1_feature_coverage(mock_mcqs, client: TestClient, db) -> Dict[str, 
     print(f"     [OK] User skills successfully retrieved (High: {len(sk_body['high_confidence'])}, Medium: {len(sk_body['medium_confidence'])}).")
     results["T1.3_user_skills_retrieval"] = True
 
-    # T1.4: 10-Question Dynamic Assessment Session Start
-    print("\n -> [T1.4] Verifying 10-Question Session Start (POST /api/start-test)...")
+    # T1.4: 25-Question Dynamic Assessment Session Start
+    print("\n -> [T1.4] Verifying 25-Question Session Start (POST /api/start-test)...")
     test_uid_sess = f"v_sess_user_{uuid.uuid4().hex[:6]}"
     db.resumes.update_one(
         {"_id": test_uid_sess},
@@ -186,9 +186,9 @@ def run_tier_1_feature_coverage(mock_mcqs, client: TestClient, db) -> Dict[str, 
     )
     assert resp_start.status_code == 200, f"Start test returned {resp_start.status_code}: {resp_start.text}"
     sess_out = resp_start.json()
-    assert sess_out["total_questions"] in (10, 25), f"Expected 10 or 25 questions, got {sess_out['total_questions']}"
-    assert len(sess_out["questions"]) in (10, 25), f"Expected 10 or 25 questions in list, got {len(sess_out['questions'])}"
-    assert sess_out["time_limit_minutes"] in (90, 120), "Time limit must be valid"
+    assert sess_out["total_questions"] == 25, f"Expected 25 questions, got {sess_out['total_questions']}"
+    assert len(sess_out["questions"]) == 25, f"Expected 25 questions in list, got {len(sess_out['questions'])}"
+    assert sess_out["time_limit_minutes"] == 120, "Time limit must be 120 minutes"
     assert "started_at" in sess_out and "expires_at" in sess_out, "Missing session timing fields"
     # Verify answers stripped
     for q in sess_out["questions"][:20]:

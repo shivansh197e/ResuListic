@@ -117,6 +117,8 @@ def predict_salary(
     # 1. Detect College Tier from resume text
     college_info = detect_college_tier(resume_text)
     base_x = DOMAIN_MARKET_AVG.get(domain, 7.5) + college_info["boost"]
+    experience_boost = {"fresher": 0.0, "early_career": 2.5, "mid_level": 5.0}.get(str(experience_tier).lower(), 0.0)
+    base_x += experience_boost
 
     # 2. Piecewise Formula based on Candidate Score S:
     if score >= 90.0:
@@ -213,6 +215,10 @@ def predict_salary(
         {
             "factor": f"Role Market Baseline ({domain})",
             "impact": f"₹{base_x:.1f} LPA",
+        },
+        {
+            "factor": f"Experience Tier ({experience_tier})",
+            "impact": f"+{experience_boost:.1f} LPA Base",
         },
     ]
     if hi_count > 0:

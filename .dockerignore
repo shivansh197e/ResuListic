@@ -16,6 +16,10 @@ __pycache__/
 # Large local datasets & temporary uploads
 datasets/*.zip
 datasets/*.json
+datasets/job prediction dataset/data/
+ml-services/data/test_resumes/
+*.pdf
+cloudflared.exe
 temp_uploads/*
 frontend/node_modules/
 

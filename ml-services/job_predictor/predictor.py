@@ -149,6 +149,8 @@ def predict_job_domain(
     # Evaluate Switch Domains (alternatives with probability >= threshold)
     switch_domains = []
     for domain, prob in class_prob_pairs[1:]:
+        if float(prob) < switch_threshold:
+            continue
         gap_info = analyze_skill_gap(skills, domain)
         # Even if probability is modest, adjacent domains provide high value
         switch_domains.append({
@@ -196,7 +198,7 @@ def predict_for_user(db, user_id: str) -> Dict[str, Any]:
     latest_sub = db.submissions.find_one({"user_id": user_id}, sort=[("timestamp", -1)])
     coding_score = 75.0
     if latest_sub:
-        eval_res = latest_sub.get("evaluation_result", {})
+        eval_res = latest_sub.get("evaluation") or latest_sub.get("evaluation_result", {})
         coding_score = float(eval_res.get("score", 75.0))
 
     mcq_score = 75.0

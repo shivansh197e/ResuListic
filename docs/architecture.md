@@ -28,7 +28,7 @@ Responsible for understanding the raw text.
 Responsible for assembling the dynamic assessments.
 - **`ai_question_generator.py`**: Prompts Gemini API to generate 5 Easy MCQs using Pydantic Structured Outputs.
 - **`circular_tracker.py`**: Manages the modulo-based pointer system for deterministic Hard questions.
-- **`question_selector.py`**: Assembles the final 10-question test session (5 Easy MCQs, 3 Mod Coding, 2 Hard Coding).
+- **`question_selector.py`**: Assembles the final 25-question test session (20 Easy MCQs, 3 Mod Coding, 2 Hard Coding).
 
 ---
 

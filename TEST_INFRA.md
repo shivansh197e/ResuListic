@@ -12,9 +12,9 @@ The integrated full-stack architecture encompasses:
 2. **Resume Intake & Skill Extraction**:
    - `POST /api/parse-resume`: Multipart upload (`.pdf`, `.docx`, `.png`, `.jpg`, `.jpeg`), OCR/text parsing, MongoDB Atlas `resumes` persistence.
    - `GET /api/user-skills/{user_id}`: High and Medium confidence skill taxonomy retrieval.
-3. **1.5-Hour Time-Bound Assessment Engine**:
-   - `POST /api/start-test`: 10-question dynamic session (5 MCQs, 3 Moderate Coding, 2 Hard Coding, 90:00 countdown timer contract, `TestSessionOut` public payload).
-   - `POST /api/submit-test`: 90-minute deadline boundary enforcement (`submitted` vs. `submitted_expired`), completed MCQ auto-grading, and answer persistence.
+3. **2-Hour Time-Bound Assessment Engine**:
+   - `POST /api/start-test`: 25-question dynamic session (20 MCQs, 3 Moderate Coding, 2 Hard Coding, 120:00 countdown timer contract, `TestSessionOut` public payload).
+   - `POST /api/submit-test`: 120-minute deadline boundary enforcement (`submitted` vs. `submitted_expired`), completed MCQ auto-grading, and answer persistence.
 4. **Code Evaluator (LLM-as-a-Judge)**:
    - `POST /api/evaluate`: Groq LLM-as-a-Judge (`qwen/qwen3.8-27b`) with exponential backoff and deterministic offline AST mock fallback (<5ms), returning `passed`, `score`, `feedback`, `time_complexity`.
 5. **Career Intelligence & Salary Prediction**:
@@ -29,7 +29,7 @@ The integrated full-stack architecture encompasses:
 │   ├── Static SPA Route Serving (`GET /`, `static/index.html`)          │
 │   ├── Resume Upload & Parsing (`POST /api/parse-resume`)               │
 │   ├── User Skill Taxonomy Fetching (`GET /api/user-skills/{id}`)       │
-│   ├── 10-Question Assessment Session Start (`POST /api/start-test`)    │
+│   ├── 25-Question Assessment Session Start (`POST /api/start-test`)    │
 │   ├── Code Evaluation Engine (`POST /api/evaluate`)                    │
 │   ├── Test Submission & Auto-Grading (`POST /api/submit-test`)         │
 │   ├── Job Domain & Career Switch Engine (`POST /api/predict-domain`)   │
@@ -37,7 +37,7 @@ The integrated full-stack architecture encompasses:
 ├────────────────────────────────────────────────────────────────────────┤
 │ Tier 2: Boundary & Corner Cases                                        │
 │   ├── Unsupported Upload Extensions (.txt, .exe, .bin -> HTTP 400)    │
-│   ├── 90m Timer Expiration Status ("submitted_expired", is_expired)    │
+│   ├── 120m Timer Expiration Status ("submitted_expired", is_expired)   │
 │   ├── Python Code Syntax Error AST Evaluation (score <= 30, no 500)   │
 │   ├── Empty String & Whitespace Code Evaluation Rejection              │
 │   ├── Missing Optional Parameters (skills, scores, resume text)        │
@@ -72,13 +72,13 @@ The integrated full-stack architecture encompasses:
 | **Tier 1: Feature Coverage** | `T1.1` | Static SPA Serving | `GET /` returns HTTP 200 with HTML or SPA container, scripts for React/Tailwind/Babel. | SCOPE.md F1, ORIGINAL_REQUEST R1 | Status 200; HTML contains `<div id="root">`, React 18, and Tailwind CDN. |
 | | `T1.2` | Resume Parsing | `POST /api/parse-resume` parses candidate resume (PDF/DOCX) and returns profile + skills. | SCOPE.md F5, ORIGINAL_REQUEST R2 | Status 200; returns extracted profile, contact, and high/medium skills. |
 | | `T1.3` | User Skills | `GET /api/user-skills/{id}` returns candidate high and medium confidence skills. | SCOPE.md F6, ORIGINAL_REQUEST R2 | Status 200; `high_confidence` and `medium_confidence` are lists of strings. |
-| | `T1.4` | Start Test Session | `POST /api/start-test` generates 10-question session with 90m deadline contract. | SCOPE.md F7, F8, ORIGINAL_REQUEST R3 | Status 200; 10 questions (5 MCQ, 3 Mod, 2 Hard); `time_limit_minutes: 90`; answers stripped. |
+| | `T1.4` | Start Test Session | `POST /api/start-test` generates 25-question session with 120m deadline contract. | SCOPE.md F7, F8, ORIGINAL_REQUEST R3 | Status 200; 25 questions (20 MCQ, 3 Mod, 2 Hard); `time_limit_minutes: 120`; answers stripped. |
 | | `T1.5` | Code Evaluator | `POST /api/evaluate` evaluates Python code via Groq LLM or deterministic AST mock. | SCOPE.md F9, ORIGINAL_REQUEST R3 | Status 200; exact 4 keys: `passed` (bool), `score` (0-100), `feedback`, `time_complexity`. |
 | | `T1.6` | Submit Test | `POST /api/submit-test` submits answers within deadline; returns score & status. | SCOPE.md F10, ORIGINAL_REQUEST R3 | Status 200; `status: "submitted"`; `is_expired: false`; completed MCQs graded. |
 | | `T1.7` | Domain Predictor | `POST /api/predict-domain` predicts job domain, probabilities, and switch gaps. | SCOPE.md F12, F13, ORIGINAL_REQUEST R4 | Status 200; 5 domain probabilities sum to ~1.0; top 3 switch domains identified. |
 | | `T1.8` | Salary Predictor | `POST /api/predict-salary` predicts compensation package (4.0 - 35.0 LPA) & drivers. | SCOPE.md F14, ORIGINAL_REQUEST R4 | Status 200; `predicted_lpa` in [4.0, 35.0]; `salary_range` bounded; factors list populated. |
 | **Tier 2: Boundary & Corner Cases** | `T2.1` | Unsupported Upload | `POST /api/parse-resume` with unsupported extension (`.txt`, `.exe`, `.bin`). | explorer_survey_7_3 Edge Case 1 | Status 400 Bad Request; detail `"Unsupported file format."`. |
-| | `T2.2` | Timer Expiration | `POST /api/submit-test` after 90m deadline has elapsed (`> 5400s`). | ORIGINAL_REQUEST 2026-10-12 R3 | Status 200; `status: "submitted_expired"`; `is_expired: true`; answers preserved. |
+| | `T2.2` | Timer Expiration | `POST /api/submit-test` after 120m deadline has elapsed (`> 7200s`). | ORIGINAL_REQUEST 2026-10-12 R3 | Status 200; `status: "submitted_expired"`; `is_expired: true`; answers preserved. |
 | | `T2.3` | Code Syntax Error | `POST /api/evaluate` with invalid Python syntax (`def foo(:`). | explorer_survey_7_3 Edge Case 12 | Status 200; `passed: false`; `score <= 30`; feedback identifies syntax error; zero 500s. |
 | | `T2.4` | Empty/Blank Code | `POST /api/evaluate` with empty string `""` or whitespace. | explorer_survey_7_3 Edge Case 13 | Status 200; `passed: false`; `score <= 30`. |
 | | `T2.5` | Missing Parameters | `POST /api/predict-domain` and `predict-salary` with omitted optional fields. | explorer_survey_7_3 Edge Case 16 | Status 200; handles gracefully using defaults; zero 500 errors. |
@@ -109,10 +109,10 @@ $$E[\text{'passed'}] \in \{\text{True}, \text{False}\}$$
 $$E[\text{'score'}] \in \mathbb{Z} \quad \text{such that} \quad 0 \le E[\text{'score'}] \le 100$$
 $$\text{len}(E[\text{'feedback'}]) > 0 \quad \land \quad \text{len}(E[\text{'time\_complexity'}]) > 0$$
 
-### 3.2 90-Minute Timed Session Invariant
+### 3.2 120-Minute Timed Session Invariant
 For every generated test session $S$:
-$$S[\text{'time\_limit\_minutes'}] = 90$$
-$$T_{\text{expires}} = T_{\text{started}} + 90 \times 60 \text{ seconds}$$
+$$S[\text{'time\_limit\_minutes'}] = 120$$
+$$T_{\text{expires}} = T_{\text{started}} + 120 \times 60 \text{ seconds}$$
 For submissions submitted at timestamp $T_{\text{sub}}$:
 $$\text{status} = \begin{cases} 
 \text{"submitted"}, & \text{if } T_{\text{sub}} \le T_{\text{expires}} \\

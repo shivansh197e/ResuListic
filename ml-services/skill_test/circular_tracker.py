@@ -18,7 +18,8 @@ VALID_DESC_FILTER = {
 def get_hard_questions(db: Database, user_id: str, skill: str, count: int = 2) -> list[dict]:
     """Fetch `count` consecutive hard questions with valid full descriptions using circular pointer logic."""
     skill_query = {"skill": skill, **VALID_DESC_FILTER}
-    total_hard = db.questions_hard.count_documents(skill_query)
+    pool_questions = list(db.questions_hard.find(skill_query).sort("index", 1))
+    total_hard = len(pool_questions)
     if total_hard == 0:
         # Fallback to general pool of valid questions
         return list(db.questions_hard.aggregate([
@@ -51,7 +52,7 @@ def get_hard_questions(db: Database, user_id: str, skill: str, count: int = 2) -
     fetch_count = min(count, pool_size)
     indices = [(pointer + i) % pool_size for i in range(fetch_count)]
 
-    questions = list(db.questions_hard.find({"skill": skill, "index": {"$in": indices}, **VALID_DESC_FILTER}))
+    questions = [pool_questions[index] for index in indices]
 
     # Re-sort to match circular order (MongoDB doesn't guarantee $in order)
     index_order = {idx: pos for pos, idx in enumerate(indices)}

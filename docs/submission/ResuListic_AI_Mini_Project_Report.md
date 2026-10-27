@@ -62,7 +62,7 @@ Artificial Intelligence serves as the primary facilitator across every layer of 
 To address this multifaceted problem, ResuListic was developed with the following specific, measurable objectives:
 1. **Multimodal Resume Extraction:** Develop a resilient ingestion pipeline supporting `.pdf`, `.docx`, `.png`, `.jpg`, and `.jpeg` formats with an automated dual-engine fallback (digital text extraction via `pdfplumber`/`PyMuPDF` and OCR extraction via `pytesseract` and `pdf2image`).
 2. **Contextual Skill & Entity Normalization:** Implement an NLP pipeline utilizing spaCy (`en_core_web_md`) and regular expressions to parse contact coordinates and categorize candidate competencies into High-Confidence (multi-section cross-validated) and Medium-Confidence tiers against a 170+ standardized tech taxonomy.
-3. **Adaptive 90-Minute Timed Technical Engine:** Design a 10-question adaptive assessment architecture comprising 5 generative conceptual MCQs, 3 moderate algorithmic problems, and 2 advanced coding challenges managed by a circular linked list modulo-pointer algorithm (`new_ptr = (old_ptr + 2) % 50`) ensuring non-repetitive retakes and auto-submission on expiration.
+3. **Adaptive 120-Minute Timed Technical Engine:** Design a 25-question adaptive assessment architecture comprising 20 Groq-generated conceptual MCQs, 3 moderate algorithmic problems, and 2 advanced coding challenges managed by a circular linked list modulo-pointer algorithm (`new_ptr = (old_ptr + 2) % 50`) ensuring non-repetitive retakes and auto-submission on expiration.
 4. **LLM-as-a-Judge Code Evaluation:** Engineer an automated technical interview grader using Groq-hosted open-source foundation models (`llama-3.3-70b-versatile` / `qwen3.8-27b`) returning functional correctness, test scores (0–100), algorithmic time complexity, and contextual feedback.
 5. **Multi-Domain Job Classification:** Train, benchmark, and deploy a supervised multi-class classifier across five primary engineering domains (*Backend*, *Cloud/DevOps*, *Data Science/AI*, *Frontend*, *Mobile*), utilizing early-fusion feature engineering and outputting class probabilities for career switch path generation.
 6. **Continuous Compensation Regression (4–30+ LPA):** Develop and calibrate a non-linear regression pipeline mapping candidate skill diversity, domain weightings, and assessment scores into accurate CTC compensation brackets.
@@ -155,13 +155,13 @@ The extracted text buffer undergoes hierarchical semantic decomposition:
 ### 6.4 Adaptive 90-Minute Assessment Engine
 Upon completing resume ingestion, the candidate reviews their extracted skills via `GET /api/user-skills/{user_id}` and launches an assessment via `POST /api/start-test`.
 
-**Session Composition Contract (10 Questions):**
+**Session Composition Contract (25 Questions):**
 * **5 Easy Conceptual MCQs:** Generated on-the-fly using Google Gemini / Groq LLM under strict JSON schema enforcement (`question`, `options [A, B, C, D]`, `correct_answer`, `explanation`). Questions are dynamically tailored to the candidate's top extracted high-confidence skills.
 * **3 Moderate Coding Challenges:** Sampled deterministically from MongoDB Atlas collections (`questions_moderate`) covering core data structures, algorithms, and practical development scenarios.
 * **2 Hard Coding Challenges (Circular Modulo Pointer):** To guarantee that retakes do not present repetitive problems, a pointer $P_u$ is tracked per user in the `user_test_state` collection:
   $$P_{\text{next}} = (P_{\text{current}} + 2) \pmod{N}, \quad \text{where } N = 50$$
   Questions at indices $P_{\text{current}}$ and $(P_{\text{current}} + 1)$ are assigned, advancing the pointer cyclically across 50 vetted LeetCode hard problems.
-* **Temporal Enforcement:** A 90-minute deadline ($T_{\text{expires}} = T_{\text{start}} + 5400\text{ seconds}$) is stored in UTC ISO format. The client UI renders a live countdown timer with visual alerts. Submissions past $T_{\text{expires}}$ are flagged as `submitted_expired`, preventing tampering while preserving answered questions for evaluation.
+* **Temporal Enforcement:** A 120-minute deadline ($T_{\text{expires}} = T_{\text{start}} + 7200\text{ seconds}$) is stored in UTC ISO format. The client UI renders a live countdown timer with visual alerts. Submissions past $T_{\text{expires}}$ are flagged as `submitted_expired`, preventing tampering while preserving answered questions for evaluation.
 
 ---
 

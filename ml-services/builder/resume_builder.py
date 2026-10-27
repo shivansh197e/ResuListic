@@ -244,6 +244,7 @@ def build_resume_document(file_path: str, user_id: str) -> dict | None:
 
         # ── Resume Sections (raw text for downstream processing) ─────────────
         "sections": resolved_sections,
+        "raw_text": raw_text,
 
         # ── AI Enrichment (filled by downstream pipeline stages) ─────────────
         "enrichment": {

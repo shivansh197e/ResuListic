@@ -11,7 +11,7 @@ Our project, **ResuListic**, solves the critical **disconnect between unverified
 * **Keyword Stuffing & ATS Exploits:** Traditional Applicant Tracking Systems (ATS) use naive keyword matching. Candidates inflate resumes with buzzwords to pass screening filters without knowing the fundamentals.
 * **Superficial & Slow Human Screening:** Recruiters take weeks manually screening resumes and scheduling interviews for candidates who often cannot write basic code.
 * **Lack of Empirical Compensation Calibration:** Salary negotiations are arbitrary and prone to wage bias rather than tied to objective, tested technical skill equity.
-* **The ResuListic Solution:** We created a closed-loop platform that extracts multimodal resumes (including scanned images), immediately tests the candidate in an adaptive 90-minute technical exam, uses an AI Judge to evaluate their code and Big-O complexity, and predicts their true career domain, career switch pathways, and market salary package (4 to 30+ LPA).
+* **The ResuListic Solution:** We created a closed-loop platform that extracts multimodal resumes (including scanned images), immediately tests the candidate in an adaptive 120-minute technical exam with 20 Groq MCQs and 5 dataset coding questions, uses an AI Judge to evaluate their code and Big-O complexity, and predicts their true career domain, career switch pathways, and market salary package.
 
 ---
 
@@ -62,7 +62,7 @@ We benchmarked multiple state-of-the-art algorithms before selecting our product
 | System Stage | Input Data | Output Generated |
 | :--- | :--- | :--- |
 | **Stage 1: Parsing** | Unstructured file (`.pdf`, `.docx`, `.png`, `.jpg`) + `user_id` | Structured JSON profile: Name, Email, Phone, High- & Medium-Confidence Skills. |
-| **Stage 2: Assessment** | Extracted candidate skills + Selected test domain | 10-Question Test Session (5 MCQs, 3 Moderate Coding, 2 Hard Coding via circular pointer) + 90-minute deadline. |
+| **Stage 2: Assessment** | Extracted candidate skills + Selected test domain | 25-Question Test Session (20 Groq MCQs, 3 Moderate Coding, 2 Hard Coding via circular pointer) + 120-minute deadline. |
 | **Stage 3: AI Judge** | Candidate Python code + Question description + Hidden reference solution | Structured JSON: `{passed: bool, score: 0-100, feedback: str, time_complexity: str}`. |
 | **Stage 4: Prediction** | Early-fusion vector: Resume TF-IDF (1,500 dims) + MCQ score + Coding score + Total score + Skill count | 1. Primary Job Domain & Confidence %<br>2. Career Transition Pathways & Missing Skill Pills<br>3. Predicted CTC in LPA (e.g., ₹16.5 LPA) & Confidence Range. |
 
@@ -140,7 +140,7 @@ We used specific metrics tailored to multi-class classification and continuous r
 Being transparent about limitations shows engineering maturity. The main limitations are:
 1. **Code Execution Sandbox:** Currently, code is evaluated semantically using Groq LLM-as-a-Judge against reference solutions. While safe from arbitrary code execution attacks, it does not execute code in an isolated Linux kernel sandbox (e.g., Docker/gVisor/Judge0) to measure physical CPU clock cycle execution time.
 2. **Dataset Scale & Geography:** The 1,000-profile dataset reflects Indian tech industry compensation tiers (4.0 to 30.0+ LPA). International compensation benchmarks (e.g., US/Europe Silicon Valley scales) would require retraining with geographic cost-of-living adjustments.
-3. **Plagiarism & Proctoring:** The 90-minute testing environment enforces strict deadlines and circular question progression, but currently lacks webcam facial verification or screen recording telemetry.
+3. **Plagiarism & Proctoring:** The 120-minute testing environment enforces strict deadlines and circular question progression, but currently lacks webcam facial verification or screen recording telemetry.
 
 ---
 

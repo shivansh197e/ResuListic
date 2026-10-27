@@ -182,16 +182,25 @@ def generate_mcq_questions(skills: List[str], count: int = 20) -> List[dict]:
 
     collected_mcqs: List[LLMMCQResponse] = []
     fast_mock = os.getenv("FAST_MOCK_MCQ") == "1"
-    groq_api_key = None if fast_mock else os.getenv("GROQ_API_KEY")
+    # External generation is opt-in so tests, local demos, and outages remain deterministic.
+    groq_api_key = os.getenv("GROQ_API_KEY") if os.getenv("ENABLE_LIVE_AI") == "1" and not fast_mock else None
 
     if groq_api_key:
         try:
             from groq import Groq
             client = Groq(api_key=groq_api_key)
             model = "qwen/qwen3.8-27b"
-            batch = _call_groq_mcq_batch(client, model, skills_str, count=5)
-            if batch:
-                collected_mcqs.extend(batch)
+            # Generate in five-question batches to stay within the model's
+            # output-token budget while still producing all 20 requested MCQs.
+            max_batches = (count + 4) // 5
+            for _ in range(max_batches):
+                remaining = count - len(collected_mcqs)
+                if remaining <= 0:
+                    break
+                batch = _call_groq_mcq_batch(client, model, skills_str, count=min(5, remaining))
+                if not batch:
+                    break
+                collected_mcqs.extend(batch[:remaining])
         except Exception as groq_err:
             print(f"[Groq MCQ Error] {groq_err}", flush=True)
 

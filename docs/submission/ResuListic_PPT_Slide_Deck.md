@@ -39,7 +39,7 @@
 ## SLIDE 3: PROJECT OBJECTIVES
 * **1. Multimodal Resume Ingestion:** Extract text seamlessly from PDF, DOCX, and images (PNG/JPG) using an automatic OCR fallback engine.
 * **2. NLP Skill & Entity Normalization:** Extract candidate contact details and map technical skills into *High* and *Medium* confidence tiers against a standardized 170+ technology taxonomy.
-* **3. 90-Minute Adaptive Assessment Engine:** Orchestrate a non-repetitive 10-question timed exam (5 generative MCQs, 3 moderate coding questions, and 2 advanced coding challenges via a circular linked list pointer).
+* **3. 120-Minute Adaptive Assessment Engine:** Orchestrate a non-repetitive 25-question timed exam (20 Groq-generated MCQs, 3 moderate coding questions, and 2 advanced coding challenges via a circular linked list pointer).
 * **4. Automated LLM-as-a-Judge Code Evaluation:** Grade candidate Python solutions in real-time for functional correctness, score (0–100), Big-O time complexity, and code quality.
 * **5. Multi-Class Job Domain Classification:** Predict primary career domain across 5 specializations and recommend career transition pathways with missing skill gaps.
 * **6. Continuous Salary Compensation Modeling:** Predict market CTC packages (4.0 to 30.0+ LPA) based on empirical skill equity and test performance.
@@ -69,7 +69,7 @@
 * **Modular Pipeline Components:**
   * **1. Ingestion Layer:** `pdfplumber` / `python-docx` $\rightarrow$ Fallback to `pdf2image` + `pytesseract`.
   * **2. NLP Layer:** spaCy `en_core_web_md` + Regex Entity Matcher + Taxonomy Engine.
-  * **3. Assessment Engine:** Gemini / Groq API (5 MCQs) + MongoDB Circular Modulo Selector (`(ptr+2)%50` for 2 Hard Problems) + 90-Minute HUD Countdown.
+  * **3. Assessment Engine:** Groq API (20 MCQs in batches) + MongoDB Circular Modulo Selector (`(ptr+2)%50` for 2 Hard Problems) + 120-Minute HUD Countdown.
   * **4. Evaluation Engine:** Groq Cloud (`llama-3.3-70b-versatile` / `qwen3.8-27b`) returning `{passed, score, feedback, time_complexity}`.
   * **5. ML Intelligence Layer:** ColumnTransformer (TF-IDF + Scaled Metrics) $\rightarrow$ Logistic Regression (Domain) + Gradient Boosting (Salary).
   * **6. Presentation Layer:** FastAPI Backend + React 18 / Tailwind CSS SPA + Docker Container.

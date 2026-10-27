@@ -26,7 +26,7 @@ To handle the unpredictability of user-uploaded resumes, the system uses a tiere
 
 ### 3.3. Test Orchestration (The Exam Engine)
 The Exam Engine must balance real-time performance with deterministic behavior.
-- **AI MCQs (Real-time):** Gemini generates 5 MCQs on the fly. This ensures the questions are never exactly the same. We use *Structured Outputs* (Pydantic schemas mapped to Gemini response schemas) to guarantee the frontend never receives broken JSON.
+- **AI MCQs (Real-time):** Groq generates 20 MCQs in four five-question batches. This keeps output within provider token limits while ensuring the session receives the full MCQ contract. We use Pydantic schemas to guarantee the frontend never receives broken JSON.
 - **Database Coding Questions (Pre-computed):** Generating complex coding problems in real-time is prone to hallucinations. Therefore, Moderate and Hard questions are pre-scraped and stored in MongoDB.
 - **Circular Linked List:** A stateful modulo algorithm `(pointer + count) % size` ensures a candidate never receives the same Hard question on immediate retakes, cycling fairly through a pool of 50 questions.
 
