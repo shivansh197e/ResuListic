@@ -161,6 +161,18 @@ def predict_job_domain(
             "missing_skills": gap_info["missing_skills"],
         })
 
+    # Graceful fallback: always offer at least the best alternative domain for career guidance
+    if not switch_domains and len(class_prob_pairs) > 1:
+        alt_domain, alt_prob = class_prob_pairs[1]
+        gap_info = analyze_skill_gap(skills, alt_domain)
+        switch_domains.append({
+            "domain": alt_domain,
+            "confidence": round(float(alt_prob), 4),
+            "feasibility": gap_info["feasibility"],
+            "overlap_skills": gap_info["overlap_skills"],
+            "missing_skills": gap_info["missing_skills"],
+        })
+
     return {
         "primary_domain": primary_domain,
         "confidence": round(float(primary_prob), 4),

@@ -47,9 +47,16 @@ except Exception:
 
 from skill_test.code_evaluator import (
     evaluate_code,
+    mock_evaluate_code,
     get_question_and_solution,
     save_submission,
 )
+
+try:
+    from extraction.skill_taxonomy import get_canonical_skill, get_parent_skill
+except Exception:
+    get_canonical_skill = lambda s: ""
+    get_parent_skill = lambda s: ""
 from job_predictor.predictor import (
     predict_job_domain,
     predict_for_user,
@@ -362,7 +369,7 @@ async def submit_test(submission: AnswerSubmission):
     seen_question_indexes = set()
     for ans in submission.answers:
         q_idx = str(ans.get("q_index", ""))
-        if q_idx not in pub_q_map:
+        if q_idx not in pub_q_map and q_idx not in eval_key:
             raise HTTPException(status_code=400, detail=f"Unknown question index: {q_idx}")
         if q_idx in seen_question_indexes:
             raise HTTPException(status_code=400, detail=f"Duplicate answer for question index: {q_idx}")
@@ -405,11 +412,7 @@ async def submit_test(submission: AnswerSubmission):
                 "explanation": ev.get("explanation", ""),
             })
             if raw_q_skill:
-                try:
-                    from extraction.skill_taxonomy import get_canonical_skill, get_parent_skill
-                    q_skill = get_canonical_skill(raw_q_skill) or get_parent_skill(raw_q_skill) or str(raw_q_skill).strip()
-                except Exception:
-                    q_skill = str(raw_q_skill).strip()
+                q_skill = get_canonical_skill(raw_q_skill) or get_parent_skill(raw_q_skill) or str(raw_q_skill).strip()
                 if q_skill not in skill_stats:
                     skill_stats[q_skill] = {"correct": 0.0, "total": 0}
                 skill_stats[q_skill]["total"] += 1
@@ -435,7 +438,6 @@ async def submit_test(submission: AnswerSubmission):
                 c_score = 0.0
                 c_passed = False
             else:
-                from skill_test.code_evaluator import mock_evaluate_code
                 m_res = mock_evaluate_code(code_str)
                 c_score = float(m_res.get("score", 0.0))
                 c_passed = bool(m_res.get("passed", False))
@@ -486,11 +488,7 @@ async def submit_test(submission: AnswerSubmission):
                 "reference_solution": reference_solution,
             })
             if raw_q_skill:
-                try:
-                    from extraction.skill_taxonomy import get_canonical_skill, get_parent_skill
-                    q_skill = get_canonical_skill(raw_q_skill) or get_parent_skill(raw_q_skill) or str(raw_q_skill).strip()
-                except Exception:
-                    q_skill = str(raw_q_skill).strip()
+                q_skill = get_canonical_skill(raw_q_skill) or get_parent_skill(raw_q_skill) or str(raw_q_skill).strip()
                 if q_skill not in skill_stats:
                     skill_stats[q_skill] = {"correct": 0.0, "total": 0}
                 skill_stats[q_skill]["total"] += 1
@@ -499,7 +497,9 @@ async def submit_test(submission: AnswerSubmission):
     # Include unanswered questions in the post-submit review without exposing
     # answer keys before this endpoint is called.
     reviewed_indexes = {str(item.get("q_index")) for item in answer_review}
-    for q_idx, pub_q in pub_q_map.items():
+    candidate_keys = list(pub_q_map.keys()) if pub_q_map else list(eval_key.keys())
+    for q_idx in candidate_keys:
+        pub_q = pub_q_map.get(q_idx, {})
         if q_idx in reviewed_indexes:
             continue
         ev = eval_key.get(q_idx) or eval_key.get(int(q_idx) if q_idx.isdigit() else -1) or {}
@@ -568,13 +568,13 @@ async def submit_test(submission: AnswerSubmission):
         score_val = round(min(100.0, max(0.0, mcq_marks_val + moderate_marks_val + hard_marks_val)), 1)
         mcq_score_val = round((mcq_correct / mcq_total) * 100.0, 1) if mcq_total > 0 else 0.0
         coding_score_val = round(((moderate_marks_val + hard_marks_val) / 80.0) * 100.0, 1)
-        total_questions_out = len(session_questions)
+        total_questions_out = len(session_questions) or len(eval_key) or len(submission.answers)
         correct_answers_out = mcq_correct + coding_passed
     else:
         mcq_score_val = round((mcq_correct / mcq_total) * 100.0, 1) if mcq_total > 0 else 0.0
         score_val = mcq_score_val
         coding_score_val = 0.0
-        total_questions_out = len(session_questions)
+        total_questions_out = len(session_questions) or len(eval_key) or len(submission.answers)
         correct_answers_out = mcq_correct
 
     # Calculate letter grade

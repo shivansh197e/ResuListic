@@ -297,4 +297,15 @@ frontend/dist/
 frontend/build/
 .eslintcache
 
-
+
+
+
+# GSD (Get Shit Done) Dynamic State Files
+.gsd/ARCHITECTURE.md
+.gsd/DECISIONS.md
+.gsd/JOURNAL.md
+.gsd/ROADMAP.md
+.gsd/SPEC.md
+.gsd/STACK.md
+.gsd/STATE.md
+.gsd/TODO.md

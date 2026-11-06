@@ -119,10 +119,13 @@ def evaluate_code(
         "Provide your evaluation in strict JSON format:"
     )
 
-    models_to_try = []
-    for m in [model, "qwen/qwen3.8-27b", "openai/gpt-oss-120b", "openai/gpt-oss-20b"]:
-        if m and m not in models_to_try:
-            models_to_try.append(m)
+    if client is not None:
+        models_to_try = [model]
+    else:
+        models_to_try = []
+        for m in [model, "qwen/qwen3.8-27b", "openai/gpt-oss-120b", "openai/gpt-oss-20b"]:
+            if m and m not in models_to_try:
+                models_to_try.append(m)
     last_err = None
 
     is_conceptual = bool(re.search(
@@ -196,6 +199,8 @@ def evaluate_code(
 
     if last_err:
         print(f"[Groq Judge Warning] Falling back to hermetic judge due to: {last_err}", flush=True)
+        if client is not None:
+            raise last_err
     return mock_evaluate_code(code, p_desc, r_sol)
 
 

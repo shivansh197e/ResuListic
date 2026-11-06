@@ -50,7 +50,7 @@ class StartTestRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     user_id: str = Field(validation_alias=AliasChoices("user_id", "userId"))
-    selected_skills: Optional[list[str]] = Field(default=None, max_length=20, validation_alias=AliasChoices("selected_skills", "selectedSkills"))  # None = auto-pick top 5
+    selected_skills: Optional[list[str]] = Field(default=None, max_length=100, validation_alias=AliasChoices("selected_skills", "selectedSkills"))  # None = auto-pick top 5
     mode: str = Field(default="live", pattern="^(live|mock)$")
 
 
