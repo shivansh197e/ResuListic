@@ -1,0 +1,23 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="av_l2r_flow" x1="280" y1="500" x2="780" y2="500" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FF385C"/>
+      <stop offset="22%" stop-color="#FF5A36"/>
+      <stop offset="48%" stop-color="#10B981"/>
+      <stop offset="72%" stop-color="#00C49F"/>
+      <stop offset="88%" stop-color="#00A2FF"/>
+      <stop offset="100%" stop-color="#2563EB"/>
+    </linearGradient>
+  </defs>
+  <!-- Deep Midnight Navy Base Squircle -->
+  <rect x="140" y="140" width="744" height="744" rx="200" fill="#080E1C"/>
+  <rect x="142" y="142" width="740" height="740" rx="198" stroke="#1E2E4A" stroke-width="3" stroke-opacity="0.8"/>
+
+  <!-- Single Unified Continuous Path:
+       Left stroke of A (Reddish) -> Apex -> Middle stroke (Greenish) -> Vertex -> Right stroke of V with Arrow (Bluish) -->
+  <path d="M 310 690 L 490 270 L 536 730 L 710 310" 
+        stroke="url(#av_l2r_flow)" stroke-width="88" stroke-linecap="round" stroke-linejoin="round"/>
+  
+  <!-- Growth Arrowhead at the top-right end of V pointing ↗ (Bluish) -->
+  <path d="M 600 230 L 780 240 L 750 420 Z" fill="url(#av_l2r_flow)"/>
+</svg>

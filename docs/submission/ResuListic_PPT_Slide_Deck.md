@@ -197,7 +197,7 @@
 * **Live System Demo Links:**
   * **Localhost URL:** `http://localhost:8000`
   * **Docker Container:** `resulistic-app` (FastAPI + React 18 SPA)
-  * **Public Tunnel:** `https://mortgages-condition-universal-fly.trycloudflare.com`
+  * **Public Tunnel:** `https://edges-cooling-mil-refine.trycloudflare.com`
 
 > **🗣️ Presenter Script (30 Seconds):**  
 > *"Our codebase is fully containerized in Docker, backed by 118 automated tests, and accessible right now locally at localhost:8000 as well as through our public live link. We would love to walk you through a live demonstration of uploading a resume, taking a test, and generating the career intelligence report."*

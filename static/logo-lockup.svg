@@ -1,0 +1,23 @@
+<svg width="220" height="44" viewBox="0 0 220 44" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="av_l2r_lockup" x1="280" y1="500" x2="780" y2="500" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FF385C"/>
+      <stop offset="22%" stop-color="#FF5A36"/>
+      <stop offset="48%" stop-color="#10B981"/>
+      <stop offset="72%" stop-color="#00C49F"/>
+      <stop offset="88%" stop-color="#00A2FF"/>
+      <stop offset="100%" stop-color="#2563EB"/>
+    </linearGradient>
+  </defs>
+  <g transform="translate(2, 2) scale(0.0390625)">
+    <rect x="140" y="140" width="744" height="744" rx="200" fill="#080E1C"/>
+    <rect x="142" y="142" width="740" height="740" rx="198" stroke="#1E2E4A" stroke-width="3" stroke-opacity="0.8"/>
+    <path d="M 310 690 L 490 270 L 536 730 L 710 310" 
+          stroke="url(#av_l2r_lockup)" stroke-width="88" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M 600 230 L 780 240 L 750 420 Z" fill="url(#av_l2r_lockup)"/>
+  </g>
+  <text x="50" y="24" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="18" font-weight="700" fill="#0F172A" letter-spacing="-0.03em">Resu<tspan fill="#10B981">Listic</tspan></text>
+  <rect x="146" y="11" width="62" height="18" rx="9" fill="#F1F5F9" stroke="#E2E8F0" stroke-width="0.8" />
+  <text x="177" y="23" font-family="'JetBrains Mono', monospace" font-size="8.5" font-weight="600" fill="#475569" text-anchor="middle" letter-spacing="0.08em">CAREER AI</text>
+  <text x="50" y="36" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="9" font-weight="500" fill="#94A3B8" letter-spacing="0.02em">Skill Assessment &amp; Valuation</text>
+</svg>
